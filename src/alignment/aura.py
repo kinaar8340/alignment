@@ -1,10 +1,12 @@
-"""Human-aura projection of the 10-slice unit circle.
+"""Seven-ray aura: circular array of heatmaps + mean at the origin.
 
-A continuous spectral hoop encodes the same v / w / net vectors as the
-torus: hue is locked to slice angle (blue at 12 o'clock → purple →
-magenta → pink → yellow → cyan), local opacity follows net, and the
-master glow follows the gate. Time is the torus θ. Magnitudes stay the
-actual scores — no second scoring surface.
+Seven human silhouettes sit on a Flower of Life, feet toward the origin,
+heads outward. Each ray is one heavenly virtue (Humility … Diligence).
+Color is a frequency heatmap of that slice's net: −10 is lowest visible
+frequency (red), +10 is highest (violet), and 0 is no color.
+
+The circle at the origin is the aura score: mean of the seven nets,
+mapped through the same heatmap. No second scoring surface.
 """
 
 from __future__ import annotations
@@ -17,39 +19,35 @@ from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection
-from matplotlib.colors import hsv_to_rgb
-from matplotlib.patches import Circle, Ellipse
+from matplotlib.patches import Circle, Ellipse, Rectangle
+from matplotlib.transforms import Affine2D
 
-from .slices import ALIGNED_NAMES, N_SLICES, ROMAN
+from .slices import ALIGNED_NAMES
 from .timeline import TimedScore, trajectory_stats
 from .torus import GATE_COLORS
 
 PathLike = Union[str, Path]
 Progress = Optional[Callable[[int, int], None]]
 
-_BG = "#05070c"
+_BG = "#000000"
 _TEXT = "#e6edf3"
 _GOLD = "#d29922"
 _NEUTRAL = "#8b949e"
+_FOL = "#d8d8e0"
 
-# Slice i (12 o'clock, the X) is blue. Clockwise walks the rainbow so the
-# hoop matches the spectral reference: blue → purple → magenta → pink → yellow.
-_HUE0 = 0.60
-_N_SEG = 180
-_GLOW_LAYERS = (
-    (26.0, 0.06),
-    (16.0, 0.10),
-    (9.0, 0.16),
-    (4.8, 0.32),
-    (2.4, 0.55),
-    (1.15, 1.00),
-)
+N_FIGURES = 7
+# Heavenly virtues, clockwise from 12 o'clock. Love / Aligned / Neutral
+# still feed the engine gate.
+FIGURE_SLICES = (2, 3, 4, 5, 6, 7, 8)
+FIGURE_NAMES = tuple(ALIGNED_NAMES[i] for i in FIGURE_SLICES)
+# Visible spectrum: −10 → 700 nm (red, low freq), +10 → 420 nm (violet, high freq)
+_NM_LOW = 700.0
+_NM_HIGH = 420.0
 
 
 def _angles() -> np.ndarray:
-    """Slice i at 12 o'clock, clockwise — same as the unit circle."""
-    return np.pi / 2.0 - 2.0 * np.pi * np.arange(N_SLICES) / N_SLICES
+    """Figure 0 at 12 o'clock, clockwise."""
+    return np.pi / 2.0 - 2.0 * np.pi * np.arange(N_FIGURES) / N_FIGURES
 
 
 def lerp(a: float, b: float, t: float) -> float:
@@ -60,18 +58,9 @@ def lerp_vec(a: Sequence[float], b: Sequence[float], t: float) -> List[float]:
     return [lerp(x, y, t) for x, y in zip(a, b)]
 
 
-def slice_hue(index: float) -> float:
-    """Hue in [0, 1) for a (possibly fractional) slice index."""
-    return (_HUE0 + float(index) / N_SLICES) % 1.0
-
-
-def slice_hues() -> List[float]:
-    return [slice_hue(i) for i in range(N_SLICES)]
-
-
 def slice_alpha(net_i: float) -> float:
-    """Local glow from net ∈ [−10, +10]. Never fully invisible."""
-    return float(np.clip((float(net_i) + 10.0) / 20.0, 0.15, 1.0))
+    """|net|/10. Zero net is colorless."""
+    return float(np.clip(abs(float(net_i)) / 10.0, 0.0, 1.0))
 
 
 def overall_glow(mean_v: float, mean_w: float, gate: str) -> float:
@@ -86,13 +75,54 @@ def overall_glow(mean_v: float, mean_w: float, gate: str) -> float:
     return float(np.clip(metric * gate_scale * 1.25, 0.28, 1.0))
 
 
-def _hsv(h: float, s: float = 1.0, v: float = 1.0) -> Tuple[float, float, float]:
-    rgb = hsv_to_rgb((h % 1.0, float(np.clip(s, 0.0, 1.0)), float(np.clip(v, 0.0, 1.0))))
-    return float(rgb[0]), float(rgb[1]), float(rgb[2])
+def net_to_wavelength(net: float) -> float:
+    """−10 → 700 nm (red), +10 → 420 nm (violet)."""
+    t = float(np.clip((float(net) + 10.0) / 20.0, 0.0, 1.0))
+    return _NM_LOW + t * (_NM_HIGH - _NM_LOW)
 
 
-def _tint(rgb: Tuple[float, float, float], toward: Tuple[float, float, float], t: float) -> Tuple[float, float, float]:
-    return tuple(lerp(a, b, t) for a, b in zip(rgb, toward))  # type: ignore[return-value]
+def wavelength_to_rgb(nm: float) -> Tuple[float, float, float]:
+    """Approximate visible-spectrum RGB (Bruton piecewise)."""
+    nm = float(np.clip(nm, 380.0, 780.0))
+    if nm < 440.0:
+        r, g, b = -(nm - 440.0) / 60.0, 0.0, 1.0
+    elif nm < 490.0:
+        r, g, b = 0.0, (nm - 440.0) / 50.0, 1.0
+    elif nm < 510.0:
+        r, g, b = 0.0, 1.0, -(nm - 510.0) / 20.0
+    elif nm < 580.0:
+        r, g, b = (nm - 510.0) / 70.0, 1.0, 0.0
+    elif nm < 645.0:
+        r, g, b = 1.0, -(nm - 645.0) / 65.0, 0.0
+    else:
+        r, g, b = 1.0, 0.0, 0.0
+    if nm > 700.0:
+        s = 0.3 + 0.7 * (780.0 - nm) / 80.0
+    elif nm < 420.0:
+        s = 0.3 + 0.7 * (nm - 380.0) / 40.0
+    else:
+        s = 1.0
+    gamma = 0.8
+    return ((r * s) ** gamma, (g * s) ** gamma, (b * s) ** gamma)
+
+
+def net_heatmap(net: float) -> Tuple[Tuple[float, float, float], float]:
+    """Frequency heatmap. Returns (rgb, alpha); alpha is 0 at net = 0."""
+    n = float(np.clip(net, -10.0, 10.0))
+    alpha = abs(n) / 10.0
+    if alpha < 1e-9:
+        return (0.0, 0.0, 0.0), 0.0
+    return wavelength_to_rgb(net_to_wavelength(n)), alpha
+
+
+def _ray_nets(net: Sequence[float]) -> List[float]:
+    return [float(net[i]) for i in FIGURE_SLICES]
+
+
+def mean_ray_net(net: Sequence[float]) -> float:
+    """Aura score at the origin: mean of the seven figure nets."""
+    rays = _ray_nets(net)
+    return float(sum(rays) / float(len(rays)))
 
 
 def interpolate_rows(
@@ -144,133 +174,54 @@ def interpolate_rows(
     return out
 
 
-def _interp_at(values: Sequence[float], index: float) -> float:
-    n = len(values)
-    i0 = int(np.floor(index)) % n
-    i1 = (i0 + 1) % n
-    f = float(index) - np.floor(index)
-    return lerp(values[i0], values[i1], f)
+def _hex_centers(rings: int, radius: float) -> List[Tuple[float, float]]:
+    pts = [(0.0, 0.0)]
+    for r in range(1, rings + 1):
+        x, y = r * radius, 0.0
+        steps = [
+            (-0.5 * radius, (np.sqrt(3) / 2.0) * radius),
+            (-radius, 0.0),
+            (-0.5 * radius, -(np.sqrt(3) / 2.0) * radius),
+            (0.5 * radius, -(np.sqrt(3) / 2.0) * radius),
+            (radius, 0.0),
+            (0.5 * radius, (np.sqrt(3) / 2.0) * radius),
+        ]
+        for dx, dy in steps:
+            for _ in range(r):
+                pts.append((x, y))
+                x += dx
+                y += dy
+    return pts
 
 
-def _ellipse_points(rx: float, ry: float, cy: float, n: int = _N_SEG) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Clockwise from 12 o'clock. Returns xs, ys, slice-index along the hoop."""
-    t = np.linspace(0.0, 1.0, n, endpoint=True)
-    ang = np.pi / 2.0 - 2.0 * np.pi * t
-    xs = rx * np.cos(ang)
-    ys = cy + ry * np.sin(ang)
-    idx = t * N_SLICES
-    return xs, ys, idx
-
-
-def _segment_colors(
-    idx: np.ndarray,
-    net: Sequence[float],
-    *,
-    gate: str,
-    overall: float,
-    layer_alpha: float,
-) -> np.ndarray:
-    refuse = gate == "REFUSE"
-    stop = gate == "STOP_FEEDING"
-    sat = 0.42 if refuse else (0.62 if stop else 1.0)
-    val = 0.72 if refuse else (0.82 if stop else 1.0)
-    red = (0.95, 0.22, 0.20)
-    colors = []
-    for k in range(len(idx) - 1):
-        mid = 0.5 * (idx[k] + idx[k + 1])
-        h = slice_hue(mid)
-        local = slice_alpha(_interp_at(net, mid))
-        boost = 0.55 + 0.45 * local
-        rgb = _hsv(h, sat, val * boost)
-        if refuse:
-            rgb = _tint(rgb, red, 0.42)
-        elif stop:
-            rgb = _tint(rgb, red, 0.22)
-        if layer_alpha >= 0.9:
-            a = float(np.clip(0.38 + 0.62 * local * overall, 0.28, 1.0))
-        else:
-            a = float(np.clip(layer_alpha * (0.40 + 1.05 * local * overall), 0.035, 0.55))
-        colors.append((rgb[0], rgb[1], rgb[2], a))
-    return np.asarray(colors)
-
-
-def _beams(ax, xs, ys, idx, v, net, *, rx: float, ry: float, cy: float, gate: str, overall: float, breath: float) -> None:
-    refuse = gate in {"REFUSE", "STOP_FEEDING"}
-    segs_bloom, cols_bloom, lws_bloom = [], [], []
-    segs_mid, cols_mid, lws_mid = [], [], []
-    segs_core, cols_core, lws_core = [], [], []
-    y_top = (1.15 + 5.8 * overall) * breath
-    for k in range(len(xs) - 1):
-        mid = 0.5 * (idx[k] + idx[k + 1])
-        vv = max(0.0, _interp_at(v, mid))
-        local = slice_alpha(_interp_at(net, mid))
-        h = slice_hue(mid)
-        rgb = _hsv(h, 0.50 if refuse else 0.80, 1.0)
-        if refuse:
-            rgb = _tint(rgb, (0.95, 0.22, 0.20), 0.35)
-        x, y0 = xs[k], ys[k]
-        p0, p1 = (x, y0), (x, max(y0 + 0.4, y_top))
-        bloom_a = float(np.clip(0.035 + 0.055 * local * overall, 0.03, 0.12))
-        mid_a = float(np.clip(0.05 + 0.10 * local * overall, 0.04, 0.20))
-        core_a = float(np.clip(0.08 + 0.28 * (vv / 10.0) * overall, 0.05, 0.40))
-        segs_bloom.append((p0, p1))
-        cols_bloom.append((rgb[0], rgb[1], rgb[2], bloom_a))
-        lws_bloom.append(7.5 + 1.8 * vv)
-        segs_mid.append((p0, p1))
-        cols_mid.append((rgb[0], rgb[1], rgb[2], mid_a))
-        lws_mid.append(2.6 + 0.7 * vv)
-        segs_core.append((p0, p1))
-        cols_core.append((rgb[0], rgb[1], rgb[2], core_a))
-        lws_core.append(0.7 + 0.25 * vv)
-    ax.add_collection(LineCollection(segs_bloom, colors=cols_bloom, linewidths=lws_bloom, capstyle="round", zorder=3))
-    ax.add_collection(LineCollection(segs_mid, colors=cols_mid, linewidths=lws_mid, capstyle="round", zorder=3))
-    ax.add_collection(LineCollection(segs_core, colors=cols_core, linewidths=lws_core, capstyle="round", zorder=3))
-    for j, ang in enumerate(_angles()):
-        vv = max(0.0, float(v[j]))
-        if vv < 0.5:
-            continue
-        x = rx * np.cos(ang)
-        y0 = cy + ry * np.sin(ang)
-        rgb = _hsv(slice_hue(j), 0.45 if refuse else 0.85, 1.0)
-        ax.plot(
-            [x, x],
-            [y0, max(y0 + 0.4, y_top)],
-            color=rgb,
-            linewidth=1.05,
-            alpha=float(np.clip(0.16 + 0.30 * overall, 0.12, 0.48)),
-            solid_capstyle="round",
-            zorder=3,
+def _flower_of_life(ax, *, radius: float = 2.55, rings: int = 2) -> None:
+    for cx, cy in _hex_centers(rings, radius):
+        ax.add_patch(
+            Circle(
+                (cx, cy),
+                radius,
+                fill=False,
+                edgecolor=_FOL,
+                linewidth=0.85,
+                alpha=0.40,
+                zorder=1,
+            )
         )
 
 
-def _sparkles(ax, rx, ry, cy, *, overall: float, breath: float, gate: str) -> None:
-    rng = np.random.default_rng(11)
-    n = 70 if gate != "FLOW" else 110
-    angs = rng.uniform(0, 2 * np.pi, n)
-    rad = rng.uniform(0.90, 1.16, n)
-    lift = rng.uniform(0.0, 5.2, n) * overall
-    xs = rx * rad * np.cos(angs)
-    ys = cy + ry * rad * np.sin(angs) + lift
-    sizes = rng.uniform(3.0, 16.0, n)
-    hues = (angs / (2 * np.pi) + _HUE0) % 1.0
-    cols = [_hsv(h, 0.35, 1.0) for h in hues]
-    alpha = float(np.clip(0.12 + 0.45 * overall, 0.08, 0.55)) * (0.75 + 0.25 * breath)
-    ax.scatter(xs, ys, s=sizes, c=cols, alpha=alpha, linewidths=0, zorder=4)
-
-
-def _silhouette(ax, *, refuse: bool = False, scale: float = 0.78) -> None:
-    s = scale
-    body = "#cbb889" if not refuse else "#7a5555"
-    glow = "#f0e2a8" if not refuse else "#c45c5c"
-    ax.add_patch(Ellipse((0, -0.28 * s), 1.50 * s, 3.20 * s, facecolor=body, edgecolor=glow, linewidth=1.1, alpha=0.78, zorder=6))
-    ax.add_patch(Circle((0, 1.78 * s), 0.58 * s, facecolor=body, edgecolor=glow, linewidth=1.1, alpha=0.82, zorder=6))
-    ax.add_patch(Ellipse((-0.90 * s, -0.10 * s), 0.38 * s, 2.00 * s, angle=16, facecolor=body, edgecolor=glow, linewidth=0.7, alpha=0.72, zorder=5))
-    ax.add_patch(Ellipse((0.90 * s, -0.10 * s), 0.38 * s, 2.00 * s, angle=-16, facecolor=body, edgecolor=glow, linewidth=0.7, alpha=0.72, zorder=5))
-    ax.add_patch(Ellipse((-0.36 * s, -2.40 * s), 0.44 * s, 1.90 * s, facecolor=body, edgecolor=glow, linewidth=0.7, alpha=0.75, zorder=5))
-    ax.add_patch(Ellipse((0.36 * s, -2.40 * s), 0.44 * s, 1.90 * s, facecolor=body, edgecolor=glow, linewidth=0.7, alpha=0.75, zorder=5))
-    core = (0.95, 0.32, 0.28) if refuse else (0.95, 0.78, 0.28)
-    for r, a in ((1.15, 0.07), (0.62, 0.14), (0.28, 0.40), (0.12, 0.85)):
-        ax.add_patch(Circle((0, 0.18 * s), r * s, facecolor=core, edgecolor="none", alpha=a, zorder=7))
+def _silhouette(ax, ang: float, dist: float, *, scale: float = 1.0) -> None:
+    """Black figure, feet toward origin, head outward."""
+    tr = Affine2D().scale(scale).rotate(ang - np.pi / 2.0).translate(
+        dist * np.cos(ang), dist * np.sin(ang)
+    ) + ax.transData
+    fill = "#0b0b10"
+    kw = dict(facecolor=fill, edgecolor="none", transform=tr, zorder=5)
+    ax.add_patch(Ellipse((0.0, 0.12), 1.02, 1.85, **kw))
+    ax.add_patch(Circle((0.0, 1.42), 0.40, **kw))
+    ax.add_patch(Ellipse((-0.58, 0.22), 0.30, 1.38, angle=16, **kw))
+    ax.add_patch(Ellipse((0.58, 0.22), 0.30, 1.38, angle=-16, **kw))
+    ax.add_patch(Ellipse((-0.24, -1.32), 0.34, 1.28, **kw))
+    ax.add_patch(Ellipse((0.24, -1.32), 0.34, 1.28, **kw))
 
 
 def render_aura_ring(
@@ -283,69 +234,87 @@ def render_aura_ring(
     mean_v: Optional[float] = None,
     mean_w: Optional[float] = None,
     breath: float = 1.0,
-    rx: float = 6.35,
-    ry: float = 2.35,
-    cy: float = -1.85,
+    dist: float = 3.55,
 ) -> float:
-    """Draw the spectral hoop + beams onto an existing axes. Returns overall glow."""
+    """Draw Flower of Life, seven heatmaps, and the mean at the origin."""
     if mean_v is None:
         mean_v = float(np.mean(v))
     if mean_w is None:
         mean_w = float(np.mean(w))
-    overall = overall_glow(mean_v, mean_w, gate) * (0.92 + 0.08 * breath)
-    rx = rx * (0.96 + 0.04 * breath)
-    ry = ry * (0.96 + 0.04 * breath)
-    xs, ys, idx = _ellipse_points(rx, ry, cy)
-    # ground glow inside the hoop
-    ax.add_patch(
-        Ellipse(
-            (0, cy),
-            2 * rx * 0.92,
-            2 * ry * 0.92,
-            facecolor="#1a1030",
-            edgecolor="none",
-            alpha=0.22 * overall,
-            zorder=1,
-        )
-    )
-    _sparkles(ax, rx, ry, cy, overall=overall, breath=breath, gate=gate)
-    _beams(ax, xs, ys, idx, v, net, rx=rx, ry=ry, cy=cy, gate=gate, overall=overall, breath=breath)
+    overall = overall_glow(mean_v, mean_w, gate) * (0.94 + 0.06 * breath)
+    rays = _ray_nets(net)
+    avg = mean_ray_net(net)
 
-    back = ys[:-1] >= cy
-    for lw, la in _GLOW_LAYERS:
-        colors = _segment_colors(idx, net, gate=gate, overall=overall, layer_alpha=la)
-        pts = np.column_stack([xs, ys])
-        segs = np.stack([pts[:-1], pts[1:]], axis=1)
-        # back rim first
-        if np.any(back):
-            lc = LineCollection(
-                segs[back],
-                colors=colors[back],
-                linewidths=lw * breath,
-                capstyle="round",
-                joinstyle="round",
-                zorder=2,
-            )
-            ax.add_collection(lc)
-        if np.any(~back):
-            lc = LineCollection(
-                segs[~back],
-                colors=colors[~back],
-                linewidths=lw * breath,
-                capstyle="round",
-                joinstyle="round",
+    _flower_of_life(ax, radius=2.52, rings=2)
+
+    angs = _angles()
+    petal_w, petal_h = 2.22 * breath, 3.82 * breath
+    for k, ang in enumerate(angs):
+        rgb, alpha = net_heatmap(rays[k])
+        cx, cy = dist * np.cos(ang), dist * np.sin(ang)
+        angle = float(np.degrees(ang) - 90.0)
+        if alpha > 0.02:
+            for scale, al in ((1.20, 0.20), (1.08, 0.38), (1.0, 0.90)):
+                ax.add_patch(
+                    Ellipse(
+                        (cx, cy),
+                        petal_w * scale,
+                        petal_h * scale,
+                        angle=angle,
+                        facecolor=rgb,
+                        edgecolor="none",
+                        alpha=float(np.clip(al * alpha * (0.85 + 0.15 * overall), 0.0, 0.95)),
+                        zorder=3,
+                    )
+                )
+        _silhouette(ax, ang, dist, scale=0.92 * (0.97 + 0.03 * breath))
+        lx = (dist + 2.58) * np.cos(ang)
+        ly = (dist + 2.58) * np.sin(ang)
+        ax.text(
+            lx,
+            ly,
+            FIGURE_NAMES[k],
+            ha="center",
+            va="center",
+            fontsize=8,
+            color=_TEXT,
+            alpha=0.88,
+            zorder=8,
+        )
+
+    rgb, alpha = net_heatmap(avg)
+    core_r = 1.05 + 0.28 * alpha
+    ax.add_patch(Circle((0.0, 0.0), 1.22, fill=False, edgecolor=_FOL, linewidth=1.0, alpha=0.35, zorder=6))
+    if alpha > 0.02:
+        ax.add_patch(Circle((0.0, 0.0), core_r * 1.12, facecolor=rgb, edgecolor="none", alpha=0.22 * alpha, zorder=7))
+        ax.add_patch(Circle((0.0, 0.0), core_r * 0.78, facecolor=rgb, edgecolor="none", alpha=0.55 * alpha, zorder=8))
+        ax.add_patch(Circle((0.0, 0.0), core_r * 0.52, facecolor=rgb, edgecolor="white", linewidth=0.6, alpha=float(np.clip(0.55 + 0.45 * alpha, 0.55, 1.0)), zorder=9))
+    rim = GATE_COLORS.get(gate, _GOLD)
+    ax.add_patch(Circle((0.0, 0.0), core_r * 0.52, fill=False, edgecolor=rim, linewidth=2.0, alpha=0.9, zorder=10))
+    return overall
+
+
+def _heatmap_legend(ax, *, y: float = -6.72) -> None:
+    x0, width, height = -2.4, 4.8, 0.18
+    n = 64
+    step = width / n
+    for i in range(n):
+        net = -10.0 + 20.0 * (i + 0.5) / n
+        rgb, alpha = net_heatmap(net)
+        ax.add_patch(
+            Rectangle(
+                (x0 + i * step, y),
+                step,
+                height,
+                facecolor=rgb,
+                edgecolor="none",
+                alpha=max(alpha, 0.06),
                 zorder=8,
             )
-            ax.add_collection(lc)
-
-    # slice-center beads so the 10-fold geometry stays inspectable
-    angs = _angles()
-    for j, ang in enumerate(angs):
-        px, py = rx * np.cos(ang), cy + ry * np.sin(ang)
-        rgb = _hsv(slice_hue(j), 0.55, 1.0)
-        a = float(np.clip(0.25 + 0.65 * slice_alpha(net[j]) * overall, 0.2, 0.9))
-        ax.add_patch(Circle((px, py), 0.11, facecolor=rgb, edgecolor="white", linewidth=0.4, alpha=a, zorder=9))
-    return overall
+        )
+    ax.text(x0, y - 0.28, "−10", ha="center", va="top", fontsize=7, color=_NEUTRAL, zorder=8)
+    ax.text(0.0, y - 0.28, "0", ha="center", va="top", fontsize=7, color=_NEUTRAL, zorder=8)
+    ax.text(x0 + width, y - 0.28, "+10", ha="center", va="top", fontsize=7, color=_NEUTRAL, zorder=8)
 
 
 def _state_from_row(row: TimedScore, n: int) -> dict:
@@ -373,20 +342,16 @@ def render_aura_frame(
     dpi: int = 120,
     tight: bool = True,
 ) -> Path:
-    del precession  # hue stays locked to the unit-circle clock
+    del precession
     save_path = Path(save_path)
     save_path.parent.mkdir(parents=True, exist_ok=True)
-    v = state["v"]
-    w = state["w"]
-    net = state["net"]
-    gate = state["gate"]
-    refuse = gate == "REFUSE"
-    fig, ax = plt.subplots(figsize=(9, 12), facecolor=_BG)
-    fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
+    v, w, net, gate = state["v"], state["w"], state["net"], state["gate"]
+    fig, ax = plt.subplots(figsize=(10.0, 10.6), facecolor=_BG)
+    fig.subplots_adjust(left=0.03, right=0.97, top=0.90, bottom=0.07)
     ax.set_facecolor(_BG)
     ax.set_aspect("equal")
-    ax.set_xlim(-10.6, 10.6)
-    ax.set_ylim(-7.2, 9.8)
+    ax.set_xlim(-7.9, 7.9)
+    ax.set_ylim(-7.6, 8.4)
     ax.axis("off")
 
     ring_col = GATE_COLORS.get(gate, _GOLD)
@@ -400,30 +365,9 @@ def render_aura_frame(
         mean_w=state["mean_w"],
         breath=breath,
     )
-    _silhouette(ax, refuse=refuse)
+    _heatmap_legend(ax)
 
-    rx, ry, cy = 6.35, 2.35, -1.85
-    y_top_est = (1.15 + 5.8 * overall_glow(state["mean_v"], state["mean_w"], gate))
-    for j, ang in enumerate(_angles()):
-        s = np.sin(ang)
-        lx = 1.40 * rx * np.cos(ang)
-        if s > 0.55:
-            ly = y_top_est + 0.62
-        else:
-            ly = cy + (2.05 if s > 0 else 1.48) * ry * s
-        ax.text(
-            lx,
-            ly,
-            f"{ROMAN[j]}  {ALIGNED_NAMES[j]}",
-            ha="center",
-            va="center",
-            fontsize=7,
-            color=_TEXT,
-            alpha=0.80,
-            zorder=10,
-        )
-
-    ax.text(0, 9.15, title, ha="center", fontsize=15, color=_TEXT, fontweight="bold")
+    ax.text(0, 7.85, title, ha="center", fontsize=15, color=_TEXT, fontweight="bold")
     idx = state.get("index")
     n = state.get("n") or 1
     cursor = ""
@@ -431,16 +375,16 @@ def render_aura_frame(
         cursor = f"   {int(idx) + 1}/{int(n)}"
     ax.text(
         0,
-        8.40,
-        f"{gate}   mean(v)={state['mean_v']:.2f}   mean(w)={state['mean_w']:.2f}   {state.get('label') or ''}{cursor}",
+        7.22,
+        f"{gate}   mean(v)={state['mean_v']:.2f}   mean(net₇)={mean_ray_net(net):.2f}   {state.get('label') or ''}{cursor}",
         ha="center",
         fontsize=9,
         color=ring_col,
     )
     ax.text(
         0,
-        -6.85,
-        "Spectral hoop  ·  hue = slice  ·  opacity = net  ·  glow = gate",
+        -7.38,
+        "Heatmap  ·  red = −10 (low freq)  ·  none = 0  ·  violet = +10 (high freq)  ·  origin = mean",
         ha="center",
         fontsize=8,
         color=_NEUTRAL,
@@ -515,9 +459,9 @@ def render_aura_video(
     n = len(frames)
     for i, state in enumerate(frames):
         t = i / max(n - 1, 1)
-        breath = 1.0 + 0.08 * np.sin(2.0 * np.pi * 2.0 * t) * (0.35 + 0.65 * max(0.0, state["mean_v"]) / 10.0)
+        breath = 1.0 + 0.06 * np.sin(2.0 * np.pi * 2.0 * t) * (0.35 + 0.65 * max(0.0, state["mean_v"]) / 10.0)
         if state["gate"] in {"REFUSE", "STOP_FEEDING"}:
-            breath *= 0.88
+            breath *= 0.90
         p = tmp / f"frame_{i:04d}.png"
         render_aura_frame(
             state,

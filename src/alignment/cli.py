@@ -843,7 +843,7 @@ def build_parser() -> argparse.ArgumentParser:
     vr.add_argument("--title")
     vr.set_defaults(func=cmd_visualize_render)
 
-    va = vz_sub.add_parser("aura", help="Project scored circles onto a human-aura field")
+    va = vz_sub.add_parser("aura", help="Seven-ray heatmaps; origin is mean net")
     va.add_argument("--demo", action="store_true", help="synthetic year (no live scoring)")
     va.add_argument("--scores", help="scored JSONL from visualize score")
     va.add_argument("-o", "--output", default="outputs/aura.mp4")

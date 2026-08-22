@@ -7,15 +7,17 @@ import numpy as np
 import pytest
 
 from alignment.aura import (
+    N_FIGURES,
     interpolate_rows,
     lerp,
     lerp_vec,
+    mean_ray_net,
+    net_heatmap,
+    net_to_wavelength,
     overall_glow,
     render_aura_still,
     render_aura_video,
     slice_alpha,
-    slice_hue,
-    slice_hues,
 )
 from alignment.cli import main
 from alignment.timeline import demo_year
@@ -26,19 +28,29 @@ def test_lerp_and_vec():
     assert lerp_vec([0, 10], [10, 0], 0.5) == [5.0, 5.0]
 
 
-def test_slice_hues_are_spectral():
-    hues = slice_hues()
-    assert len(hues) == 10
-    assert 0.55 < hues[0] < 0.65  # blue at 12 o'clock
-    assert hues[3] > 0.85 or hues[3] < 0.05  # magenta / pink
-    # full cycle, no two adjacent hues identical
-    assert all(slice_hue(i) != slice_hue(i + 1) for i in range(9))
-
-
-def test_slice_alpha_maps_net():
-    assert slice_alpha(10) > slice_alpha(0) > slice_alpha(-10)
-    assert slice_alpha(-10) == pytest.approx(0.15)
+def test_slice_alpha_is_abs_net():
+    assert slice_alpha(0) == 0.0
     assert slice_alpha(10) == pytest.approx(1.0)
+    assert slice_alpha(-10) == pytest.approx(1.0)
+    assert slice_alpha(5) == pytest.approx(0.5)
+
+
+def test_net_heatmap_frequency_ends_and_zero():
+    rgb_lo, a_lo = net_heatmap(-10)
+    rgb_hi, a_hi = net_heatmap(10)
+    _, a_z = net_heatmap(0)
+    assert a_z == 0.0
+    assert a_lo == pytest.approx(1.0)
+    assert a_hi == pytest.approx(1.0)
+    assert rgb_lo[0] > rgb_lo[2]  # red: R > B
+    assert rgb_hi[2] > rgb_hi[0]  # violet: B > R
+    assert net_to_wavelength(-10) > net_to_wavelength(10)  # longer λ → lower freq
+
+
+def test_mean_ray_net_is_average_of_seven():
+    net = [0.0] * 10
+    net[2] = 7.0  # Humility
+    assert mean_ray_net(net) == pytest.approx(7.0 / N_FIGURES)
 
 
 def test_overall_glow_by_gate():
@@ -50,12 +62,12 @@ def test_overall_glow_by_gate():
     assert flow == pytest.approx(1.0)
 
 
-def test_angles_start_at_twelve():
+def test_angles_seven_from_twelve():
     from alignment.aura import _angles
 
     angs = _angles()
     assert angs[0] == pytest.approx(np.pi / 2.0)
-    assert len(angs) == 10
+    assert len(angs) == 7
 
 
 def test_interpolate_empty():
@@ -68,14 +80,13 @@ def test_interpolate_loop_closes():
     frames = interpolate_rows(rows, frames_per_step=2, loop=True)
     assert len(frames) == 10
     assert frames[0]["v"] == list(rows[0].result.v)
-    # last pair starts at the last post
     assert frames[8]["v"] == list(rows[4].result.v)
 
 
 def test_interpolate_no_loop_holds_last():
     rows = demo_year(weeks=3)
     frames = interpolate_rows(rows, frames_per_step=2, loop=False)
-    assert len(frames) == 5  # 2 + 2 + 1
+    assert len(frames) == 5
     assert frames[-1]["v"] == list(rows[-1].result.v)
     assert frames[-1]["gate"] == rows[-1].result.gate
 
