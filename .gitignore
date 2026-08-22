@@ -15,6 +15,7 @@ build/
 /lorenz_attractor.png
 /motion_regimes.png
 /outputs/scoring_engine_prompt.txt
+.env
 /report.json
 /household.json
 *.household.json

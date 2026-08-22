@@ -12,6 +12,7 @@ from .corpus import CorpusReport, PatternHit, analyze_corpus, corpus_prompt
 from .engine import ScoreError, ScoreResult, parse_llm_output, print_report, score
 from .guardrail import guard, guarded_chat, score_text
 from .household import Entry, HouseholdLog, gate_note, log_entry
+from .live import LiveError, detect_backend, pipeline_live, reply_live, score_live
 from .prompt import system_prompt
 from .samples import SAMPLES
 from .slices import HUMAN, JESUS, SATAN, SLICE_NAMES
@@ -46,6 +47,11 @@ __all__ = [
     "guarded_chat",
     "integrate_lorenz",
     "log_entry",
+    "LiveError",
+    "detect_backend",
+    "pipeline_live",
+    "reply_live",
+    "score_live",
     "integrate_motion",
     "may_auto_post",
     "may_execute",

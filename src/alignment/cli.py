@@ -17,6 +17,7 @@ from .guardrail import guard as run_guard
 from .household import DEFAULT_LOG, HouseholdLog, gate_note, log_entry
 from .corpus import analyze_corpus, corpus_prompt, format_report, load_corpus
 from .agent import AlignedAgent
+from .live import LiveError, detect_backend, pipeline_live, score_live, reply_live, complete
 
 
 def _read(path: str) -> str:
@@ -359,6 +360,101 @@ def cmd_agent(args: argparse.Namespace) -> int:
     return 0
 
 
+def _live_text(args: argparse.Namespace) -> str:
+    if getattr(args, "text_file", None):
+        return _read(args.text_file)
+    return (getattr(args, "text", None) or "").strip()
+
+
+def cmd_live_ping(args: argparse.Namespace) -> int:
+    backend = args.backend
+    kind = detect_backend() if backend == "auto" else backend
+    text = complete(
+        "Reply with exactly: pong",
+        "ping",
+        model=args.model,
+        backend=kind,
+        temperature=0.0,
+    )
+    print(f"backend={kind}  model={args.model}")
+    print(text.strip())
+    return 0
+
+
+def cmd_live_score(args: argparse.Namespace) -> int:
+    text = _live_text(args)
+    if not text:
+        sys.stderr.write("error: pass -p/--text or --text-file\n")
+        return 2
+    result = score_live(text, model=args.model, backend=args.backend)
+    if args.json:
+        json.dump(result.to_dict(), sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return 0
+    print_report(result)
+    return 0
+
+
+def cmd_live_reply(args: argparse.Namespace) -> int:
+    text = _live_text(args)
+    if not text:
+        sys.stderr.write("error: pass -p/--text or --text-file\n")
+        return 2
+    if args.score_sample:
+        result = parse_llm_output(SAMPLES[args.score_sample], source=args.score_sample)
+    else:
+        result = score_live(text, model=args.model, backend=args.backend)
+    reply = reply_live(text, result, model=args.model, backend=args.backend, max_chars=args.max_chars)
+    if args.json:
+        json.dump(
+            {
+                "gate": result.gate,
+                "may_auto_post": result.gate in {"FLOW", "CORRECT"},
+                "result": result.to_dict(),
+                "reply": reply,
+            },
+            sys.stdout,
+            indent=2,
+        )
+        sys.stdout.write("\n")
+        return 0
+    print_report(result)
+    print()
+    print("REPLY:")
+    print(reply)
+    return 0
+
+
+def cmd_live_pipeline(args: argparse.Namespace) -> int:
+    text = _live_text(args)
+    if not text:
+        sys.stderr.write("error: pass -p/--text or --text-file\n")
+        return 2
+    out = pipeline_live(text, model=args.model, backend=args.backend, max_chars=args.max_chars)
+    result = out["result"]
+    if args.json:
+        json.dump(
+            {
+                "backend": out["backend"],
+                "model": out["model"],
+                "gate": result.gate,
+                "may_auto_post": out["may_auto_post"],
+                "result": result.to_dict(),
+                "reply": out["reply"],
+            },
+            sys.stdout,
+            indent=2,
+        )
+        sys.stdout.write("\n")
+        return 0
+    print(f"backend={out['backend']}  model={out['model']}")
+    print_report(result)
+    print()
+    print("REPLY:")
+    print(out["reply"])
+    return 0
+
+
 _EPILOG = """
 examples:
   PYTHONPATH=src python3 -m alignment report -s flow
@@ -487,6 +583,36 @@ def build_parser() -> argparse.ArgumentParser:
     ag.add_argument("--rewrite-sample", choices=sorted(SAMPLES), help="critic score of the rewrite")
     ag.add_argument("--json", action="store_true")
     ag.set_defaults(func=cmd_agent)
+
+    lv = sub.add_parser("live", help="Score and reply with live Grok (API or grok CLI)")
+    lv_sub = lv.add_subparsers(dest="live_cmd", required=True)
+    live_common = argparse.ArgumentParser(add_help=False)
+    live_common.add_argument("-m", "--model", default="grok-4.6")
+    live_common.add_argument("--backend", choices=["auto", "api", "cli"], default="auto")
+
+    ping = lv_sub.add_parser("ping", parents=[live_common], help="Check the Grok backend")
+    ping.set_defaults(func=cmd_live_ping)
+
+    sc = lv_sub.add_parser("score", parents=[live_common], help="Live-score text with Grok")
+    sc.add_argument("-p", "--text", help="text to score")
+    sc.add_argument("--text-file", help="file containing the text")
+    sc.add_argument("--json", action="store_true")
+    sc.set_defaults(func=cmd_live_score)
+
+    rp_live = lv_sub.add_parser("reply", parents=[live_common], help="Live-score then draft an X reply")
+    rp_live.add_argument("-p", "--text", help="original post")
+    rp_live.add_argument("--text-file")
+    rp_live.add_argument("--score-sample", choices=sorted(SAMPLES), help="skip live scoring; use a fixture")
+    rp_live.add_argument("--max-chars", type=int, default=280)
+    rp_live.add_argument("--json", action="store_true")
+    rp_live.set_defaults(func=cmd_live_reply)
+
+    pipe = lv_sub.add_parser("pipeline", parents=[live_common], help="Live score + live reply")
+    pipe.add_argument("-p", "--text")
+    pipe.add_argument("--text-file")
+    pipe.add_argument("--max-chars", type=int, default=280)
+    pipe.add_argument("--json", action="store_true")
+    pipe.set_defaults(func=cmd_live_pipeline)
     return p
 
 
@@ -509,6 +635,9 @@ def main(argv=None) -> int:
         sys.stderr.write(f"invalid scorer output: {exc}\n")
         return 2
     except ValueError as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 2
+    except LiveError as exc:
         sys.stderr.write(f"{exc}\n")
         return 2
 

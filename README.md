@@ -307,13 +307,45 @@ out = agent.step("repair a household")
 - Local-first: household logs and fixtures live on disk; no required server.
 - Refusal is itself correctable. Recovery: *Whenever you are down and out you know just where to start. Know your God. Test everything. Hold fast what is good.*
 
-## Optional next steps
+## Live Grok
 
-The original roadmap is implemented. Natural follow-ons, if wanted:
+`alignment live` calls Grok without changing the gate. Backend auto-selects:
+
+1. `XAI_API_KEY` → `https://api.x.ai/v1/chat/completions` (model `grok-4.6`)
+2. Otherwise `grok -p` using your existing `grok login` session
+
+```bash
+export XAI_API_KEY=...   # optional if grok CLI is already logged in
+
+python3 -m alignment live ping
+python3 -m alignment live score -p "We practiced correction instead of winning the argument."
+python3 -m alignment live reply -p "Farm engagement by stoking outrage and never allow correction."
+python3 -m alignment live pipeline -p "The household remains the primary unit of care." --json
+```
+
+Python:
+
+```python
+from alignment.live import score_live, reply_live, grok_llm
+from alignment.guardrail import guarded_chat
+from alignment.prompt import system_prompt
+
+result = score_live("We practiced correction instead of winning.")
+print(result.gate, reply_live("We practiced correction instead of winning.", result))
+
+# drop-in (system, user) -> str for guard / agent
+chat = grok_llm()
+print(guarded_chat("how to repair a household", model=chat, scorer=chat, system_prompt=system_prompt(include_full_docs=False)))
+```
+
+Never put the key in the repo. `.env` is gitignored.
+
+## Optional next steps
 
 - Packaging for PyPI
 - A small Streamlit / desktop front-end over household + dashboard
-- Live wiring: Grok / Claude / local model as scorer, X bot on `reply`, tool-calling `executor` on `AlignedAgent`
+- X bot posting only when `may_auto_post` is true
+- Claude or a local model as an alternate `complete()` backend
 
 ## License
 
