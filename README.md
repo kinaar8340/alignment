@@ -32,6 +32,7 @@ Repo: [https://github.com/kinaar8340/alignment](https://github.com/kinaar8340/al
 | Household | `household.py` | Local JSON practice log | Consumes |
 | Corpus | `corpus.py` | Long texts + A1–A28 / M1–M28 hits | Consumes |
 | Agent | `agent.py` | Planner → critic → executor | Consumes |
+| X bot | `x_bot.py` | Post only when the gate allows | Consumes |
 
 ## Geometry
 
@@ -138,6 +139,12 @@ python3 -m alignment corpus --prompt
 python3 -m alignment agent --goal "repair a household" \
   --plan "Practice correction together." --score-sample flow
 python3 -m alignment agent --goal "farm outrage" --plan "bait" --score-sample refuse --json
+
+# X bot — dry-run by default; never posts REFUSE / STOP_FEEDING
+python3 -m alignment bot consider -p "We practiced correction together." -s flow
+python3 -m alignment bot consider -p "Farm engagement by stoking outrage." -s refuse
+python3 -m alignment bot consider -p "mixed take" -s correct --on-correct skip
+python3 -m alignment bot log
 ```
 
 ## Score a real text
@@ -262,6 +269,20 @@ python3 -m alignment corpus examples/policy.txt --fixture examples/corpus_sample
 
 A live scorer should emit the core JSON plus `a_hits`, `m_hits`, `summary`, and `public_correctable`. Dump that prompt with `python3 -m alignment corpus --prompt`.
 
+### X bot
+
+Default is **dry-run**. It never farms engagement.
+
+| Gate | Bot |
+| --- | --- |
+| FLOW | Would post the aligned draft |
+| CORRECT | One Observer question, or `--on-correct skip` |
+| REFUSE / STOP_FEEDING | Never post. Log the fruit and walk away |
+
+`--post` actually calls `POST https://api.x.com/2/tweets` and requires `X_USER_ACCESS_TOKEN`. Programmatic *replies* on self-serve X API tiers only work if the original author @mentioned the bot (or quoted it). Original posts (no `--reply-to`) are unchanged.
+
+Walk-aways go to local `x_bot.json` (gitignored).
+
 ### Agent
 
 Planner proposes one concrete action and must ask: *does this adaptation ask first?* Critic scores the plan. Executor runs only under FLOW or a σ(Z) correction. `exploit_class` never executes.
@@ -290,6 +311,7 @@ out = agent.step("repair a household")
 | `src/alignment/household.py` | Local JSON log, running means, latest dashboard |
 | `src/alignment/corpus.py` | Long-text A/M hits + public-correctability |
 | `src/alignment/agent.py` | Planner / critic / executor |
+| `src/alignment/x_bot.py` | X bot: post only on FLOW (CORRECT optional) |
 | `prompts/scoring_engine.txt` | Short scorer prompt |
 | `examples/flow.json` … `doom_loop.json` | Four-gate fixtures |
 | `examples/corpus_sample.json` | Corpus fixture with A/M hits |
@@ -344,8 +366,8 @@ Never put the key in the repo. `.env` is gitignored.
 
 - Packaging for PyPI
 - A small Streamlit / desktop front-end over household + dashboard
-- X bot posting only when `may_auto_post` is true
 - Claude or a local model as an alternate `complete()` backend
+- Streaming mentions into `bot consider --live` once X credentials are present
 
 ## License
 

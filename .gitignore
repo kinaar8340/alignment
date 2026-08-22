@@ -19,3 +19,5 @@ build/
 /report.json
 /household.json
 *.household.json
+/x_bot.json
+*.x_bot.json

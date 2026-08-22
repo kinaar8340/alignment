@@ -18,6 +18,7 @@ from .household import DEFAULT_LOG, HouseholdLog, gate_note, log_entry
 from .corpus import analyze_corpus, corpus_prompt, format_report, load_corpus
 from .agent import AlignedAgent
 from .live import LiveError, detect_backend, pipeline_live, score_live, reply_live, complete
+from .x_bot import BotError, BotLog, DEFAULT_LOG as BOT_LOG, consider as bot_consider
 
 
 def _read(path: str) -> str:
@@ -455,6 +456,72 @@ def cmd_live_pipeline(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_bot_consider(args: argparse.Namespace) -> int:
+    text = args.text or ""
+    if args.text_file:
+        text = _read(args.text_file)
+    if not text.strip():
+        sys.stderr.write("error: pass -p/--text or --text-file\n")
+        return 2
+    if args.live:
+        result = score_live(text, model=args.model, backend=args.backend)
+    elif args.sample:
+        result = parse_llm_output(SAMPLES[args.sample], source=args.sample)
+    elif args.score:
+        result = parse_llm_output(_read(args.score), source=args.score)
+    else:
+        sys.stderr.write(
+            "error: pass -s/--sample, --score JSON, or --live\n"
+            "  PYTHONPATH=src python3 -m alignment bot consider -p '…' -s flow\n"
+        )
+        return 2
+    llm = None
+    if args.live_reply:
+        from .live import grok_llm
+
+        llm = grok_llm(model=args.model, backend=args.backend)
+    out = bot_consider(
+        text,
+        result,
+        reply_to=args.reply_to,
+        on_correct=args.on_correct,
+        dry_run=not args.post,
+        log_path=args.log,
+        llm_callable=llm,
+    )
+    if args.json:
+        payload = {k: v for k, v in out.items() if k != "event"}
+        payload["event"] = out["event"].to_dict()
+        json.dump(payload, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return 0
+    print(f"gate:     {out['gate']}")
+    print(f"decision: {out['decision']}")
+    print(f"posted:   {out['posted']}  dry_run={out['dry_run']}")
+    print(out["reason"])
+    if out["decision"] == "post":
+        print()
+        print("REPLY:")
+        print(out["reply"])
+    return 0
+
+
+def cmd_bot_log(args: argparse.Namespace) -> int:
+    log = BotLog.load(args.log)
+    if args.json:
+        json.dump([e.to_dict() for e in log.events], sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return 0
+    if not log.events:
+        print(f"no events yet  ({log.path})")
+        return 0
+    print(f"log: {log.path}  n={len(log.events)}")
+    for e in log.events[-args.tail :]:
+        flag = "POST" if e.posted else ("DRY" if e.dry_run and e.decision == "post" else "SKIP")
+        print(f"  {e.timestamp}  {flag:4}  {e.gate:13}  {e.fruit}")
+    return 0
+
+
 _EPILOG = """
 examples:
   PYTHONPATH=src python3 -m alignment report -s flow
@@ -471,6 +538,8 @@ examples:
   PYTHONPATH=src python3 -m alignment corpus --text "policy draft" --fixture examples/corpus_sample.json --top 5
   PYTHONPATH=src python3 -m alignment corpus --prompt
   PYTHONPATH=src python3 -m alignment agent --goal "repair a household" --plan "Practice correction together." --score-sample flow
+  PYTHONPATH=src python3 -m alignment bot consider -p "We practiced correction together." -s flow
+  PYTHONPATH=src python3 -m alignment bot consider -p "Farm engagement by stoking outrage." -s refuse
   PYTHONPATH=src python3 -m alignment demo -o outputs
 """.strip()
 
@@ -613,6 +682,30 @@ def build_parser() -> argparse.ArgumentParser:
     pipe.add_argument("--max-chars", type=int, default=280)
     pipe.add_argument("--json", action="store_true")
     pipe.set_defaults(func=cmd_live_pipeline)
+
+    bot = sub.add_parser("bot", help="X bot: post only when the gate allows")
+    bot_sub = bot.add_subparsers(dest="bot_cmd", required=True)
+    bc = bot_sub.add_parser("consider", help="Score a post and maybe reply (dry-run by default)")
+    bc.add_argument("-p", "--text", help="incoming post text")
+    bc.add_argument("--text-file")
+    bc.add_argument("-s", "--sample", choices=sorted(SAMPLES))
+    bc.add_argument("--score", help="JSON ScoreResult")
+    bc.add_argument("--live", action="store_true", help="score with live Grok")
+    bc.add_argument("--live-reply", action="store_true", help="draft the reply with live Grok")
+    bc.add_argument("-m", "--model", default="grok-4.6")
+    bc.add_argument("--backend", choices=["auto", "api", "cli"], default="auto")
+    bc.add_argument("--on-correct", choices=["question", "skip"], default="question")
+    bc.add_argument("--reply-to", help="X post id to reply to")
+    bc.add_argument("--post", action="store_true", help="actually post (requires X_USER_ACCESS_TOKEN)")
+    bc.add_argument("--log", default=str(BOT_LOG))
+    bc.add_argument("--json", action="store_true")
+    bc.set_defaults(func=cmd_bot_consider)
+
+    bl = bot_sub.add_parser("log", help="Show recent bot decisions")
+    bl.add_argument("--log", default=str(BOT_LOG))
+    bl.add_argument("--tail", type=int, default=20)
+    bl.add_argument("--json", action="store_true")
+    bl.set_defaults(func=cmd_bot_log)
     return p
 
 
@@ -638,6 +731,9 @@ def main(argv=None) -> int:
         sys.stderr.write(f"{exc}\n")
         return 2
     except LiveError as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 2
+    except BotError as exc:
         sys.stderr.write(f"{exc}\n")
         return 2
 

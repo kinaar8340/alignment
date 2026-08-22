@@ -16,6 +16,7 @@ from .live import LiveError, detect_backend, pipeline_live, reply_live, score_li
 from .prompt import system_prompt
 from .samples import SAMPLES
 from .slices import HUMAN, JESUS, SATAN, SLICE_NAMES
+from .x_bot import consider as bot_consider, posting_decision
 from .x_reply import (
     build_reply_prompt,
     dominant_fruit,
@@ -38,6 +39,7 @@ __all__ = [
     "PatternHit",
     "PLANNER_SYSTEM",
     "analyze_corpus",
+    "bot_consider",
     "build_reply_prompt",
     "corpus_prompt",
     "gate_note",
@@ -55,6 +57,7 @@ __all__ = [
     "integrate_motion",
     "may_auto_post",
     "may_execute",
+    "posting_decision",
     "parse_llm_output",
     "print_report",
     "render_lorenz",
