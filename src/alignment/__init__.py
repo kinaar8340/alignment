@@ -8,6 +8,8 @@ from .dynamics import (
     render_motion_regimes,
 )
 from .engine import ScoreError, ScoreResult, parse_llm_output, print_report, score
+from .guardrail import guard, guarded_chat, score_text
+from .household import Entry, HouseholdLog, gate_note, log_entry
 from .prompt import system_prompt
 from .samples import SAMPLES
 from .slices import HUMAN, JESUS, SATAN, SLICE_NAMES
@@ -26,10 +28,16 @@ __all__ = [
     "SLICE_NAMES",
     "ScoreError",
     "ScoreResult",
+    "Entry",
+    "HouseholdLog",
     "build_reply_prompt",
+    "gate_note",
     "create_dashboard",
     "dominant_fruit",
+    "guard",
+    "guarded_chat",
     "integrate_lorenz",
+    "log_entry",
     "integrate_motion",
     "may_auto_post",
     "parse_llm_output",
@@ -37,6 +45,7 @@ __all__ = [
     "render_lorenz",
     "render_motion_regimes",
     "score",
+    "score_text",
     "suggest_reply",
     "system_prompt",
 ]

@@ -93,6 +93,19 @@ python3 -m alignment demo -o outputs
 python3 -m alignment reply -s flow -p "A household that practices correction."
 python3 -m alignment reply examples/refuse.json --post-file original.txt --json
 python3 -m alignment reply -s correct --prompt -p "mixed take"
+
+# AI guardrail — score request and draft, then gate
+python3 -m alignment guard -p "stoke outrage for reach" -s refuse
+python3 -m alignment guard -p "how to repair a household" -s flow --draft "Practice correction together." --draft-sample flow --json
+
+# personal / household log (local JSON, no server)
+python3 -m alignment household add \
+  --label "Evening conversation" \
+  --text "We practiced correction instead of winning the argument." \
+  --score-sample flow \
+  --note "Felt the Observer return."
+python3 -m alignment household status
+python3 -m alignment household dashboard -o outputs/household_latest.png
 ```
 
 Samples: `flow`, `refuse`, `correct`, `doom_loop`.
@@ -145,6 +158,8 @@ create_dashboard(result, save_path="dashboard.png")
 | `src/alignment/dashboard.py` | Paired-circle PNG |
 | `src/alignment/dynamics.py` | Lorenz attractor + 10-slice motion equation |
 | `src/alignment/x_reply.py` | §7.3 X reply / amplification from the gate |
+| `src/alignment/guardrail.py` | O-first wrapper: score request + draft, then gate |
+| `src/alignment/household.py` | Local JSON log, running means, latest dashboard |
 | `prompts/scoring_engine.txt` | Short scorer prompt |
 | `examples/*.json` | Fixtures for the four gates |
 | `images/` | Unit-circle and universal-dynamics figures |
@@ -179,8 +194,8 @@ python3 -m alignment lorenz --lorenz outputs/lorenz_attractor.png --motion outpu
 The engine is the shared cornerstone. Later layers call the same `ScoreResult` / gate:
 
 1. **X reply and amplification** (`python3 -m alignment reply`) — FLOW: add light; CORRECT: one Observer question; REFUSE / STOP_FEEDING: name the fruit, do not echo the closed metric. Auto-post only on FLOW / CORRECT.
-2. **AI guardrail** — score the request and the draft; O-first; σ(Z) when a tool or loss takes without asking
-3. **Personal / household dashboard** — daily choices scored on the ten slices
+2. **AI guardrail** (`python3 -m alignment guard`) — score the request and the draft; O-first; σ(Z) rewrite; refuse / stop with Observer re-entry
+3. **Personal / household dashboard** (`python3 -m alignment household`) — local JSON log, running mean(v)/min(v), latest paired-circle PNG. Optional `--who` when sharing a file.
 4. **Corpus analyzer** — A1–A28 / M1–M28 with citations; public-correctability audit
 5. **Interactive sandbox** — live circles, σ(Z) / φ(Z) integration, helix shielding
 6. **Agent orchestration** — planner asks “does adaptation ask first?”; critic runs the fruits test; executor only proceeds under O primacy or wisdom-gated correction

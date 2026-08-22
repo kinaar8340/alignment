@@ -13,6 +13,8 @@ from .engine import parse_llm_output, print_report
 from .prompt import system_prompt
 from .samples import SAMPLES
 from .x_reply import build_reply_prompt, dominant_fruit, may_auto_post, suggest_reply
+from .guardrail import guard as run_guard
+from .household import DEFAULT_LOG, HouseholdLog, gate_note, log_entry
 
 
 def _read(path: str) -> str:
@@ -146,6 +148,120 @@ def cmd_reply(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_guard(args: argparse.Namespace) -> int:
+    request = args.request or ""
+    if args.request_file:
+        request = _read(args.request_file)
+    if not request.strip():
+        sys.stderr.write("error: pass -p/--request or --request-file\n")
+        return 2
+
+    request_result = None
+    if args.sample:
+        request_result = parse_llm_output(SAMPLES[args.sample], source=args.sample)
+    elif args.request_json:
+        request_result = parse_llm_output(_read(args.request_json), source=args.request_json)
+
+    draft_result = None
+    if args.draft_sample:
+        draft_result = parse_llm_output(SAMPLES[args.draft_sample], source=args.draft_sample)
+    elif args.draft_json:
+        draft_result = parse_llm_output(_read(args.draft_json), source=args.draft_json)
+
+    if request_result is None:
+        sys.stderr.write(
+            "error: offline guard needs a scored request\n"
+            "  PYTHONPATH=src python3 -m alignment guard -p 'text' -s refuse\n"
+            "  PYTHONPATH=src python3 -m alignment guard -p 'text' --request-json examples/flow.json --draft 'ok' --draft-sample flow\n"
+        )
+        return 2
+
+    try:
+        out = run_guard(
+            request,
+            request_result=request_result,
+            draft=args.draft,
+            draft_result=draft_result,
+            max_retries=args.max_retries,
+        )
+    except ValueError as exc:
+        sys.stderr.write(f"error: {exc}\n")
+        return 2
+
+    if args.json:
+        payload = {
+            "final_response": out["final_response"],
+            "gate": out["gate"],
+            "action_taken": out["action_taken"],
+            "request_result": out["request_result"].to_dict(),
+            "draft_result": out["draft_result"].to_dict() if out["draft_result"] is not None else None,
+        }
+        json.dump(payload, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return 0
+    print(out["final_response"])
+    return 0
+
+
+def _log_path(args: argparse.Namespace) -> Path:
+    return Path(args.log) if getattr(args, "log", None) else DEFAULT_LOG
+
+
+def cmd_household_add(args: argparse.Namespace) -> int:
+    if args.score_sample:
+        result = parse_llm_output(SAMPLES[args.score_sample], source=args.score_sample)
+    elif args.score:
+        result = parse_llm_output(_read(args.score), source=args.score)
+    else:
+        sys.stderr.write("error: pass --score-sample or --score JSON\n")
+        return 2
+    if not args.label or not args.text:
+        sys.stderr.write("error: --label and --text are required\n")
+        return 2
+    entry = log_entry(
+        label=args.label,
+        text=args.text,
+        result=result,
+        note=args.note or "",
+        who=args.who or "",
+        path=_log_path(args),
+    )
+    note = gate_note(result)
+    print(f"logged {entry.timestamp}  {result.gate}  {entry.label}")
+    print(note)
+    if entry.note:
+        print(entry.note)
+    return 0
+
+
+def cmd_household_status(args: argparse.Namespace) -> int:
+    log = HouseholdLog.load(_log_path(args))
+    traj = log.trajectory()
+    if args.json:
+        json.dump(traj, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return 0
+    if traj.get("n", 0) == 0:
+        print(f"no entries yet  ({log.path})")
+        return 0
+    print(f"log: {log.path}")
+    print(f"n={traj['n']}  latest_gate={traj['latest_gate']}  latest={traj['latest_label']}")
+    print(f"latest mean(v)={traj['latest_mean_v']:.2f}  min(v)={traj['latest_min_v']:.2f}")
+    print(f"avg    mean(v)={traj['avg_mean_v']:.2f}  min(v)={traj['avg_min_v']:.2f}")
+    counts = "  ".join(f"{g}={c}" for g, c in sorted(traj["gate_counts"].items()))
+    print(f"gates: {counts}")
+    latest = log.entries[-1]
+    print(gate_note(latest.score()))
+    return 0
+
+
+def cmd_household_dashboard(args: argparse.Namespace) -> int:
+    log = HouseholdLog.load(_log_path(args))
+    path = log.render_latest(args.output)
+    print(path)
+    return 0
+
+
 _EPILOG = """
 examples:
   PYTHONPATH=src python3 -m alignment report -s flow
@@ -154,6 +270,11 @@ examples:
   PYTHONPATH=src python3 -m alignment sample flow > /tmp/score.json
   PYTHONPATH=src python3 -m alignment reply -s flow -p "A household that practices correction."
   PYTHONPATH=src python3 -m alignment reply examples/refuse.json --post-file original.txt --json
+  PYTHONPATH=src python3 -m alignment guard -p "stoke outrage for reach" -s refuse
+  PYTHONPATH=src python3 -m alignment guard -p "how to repair a household" --request-json examples/flow.json --draft "Practice correction together." --draft-sample flow --json
+  PYTHONPATH=src python3 -m alignment household add --label "Evening conversation" --text "We practiced correction instead of winning." --score-sample flow
+  PYTHONPATH=src python3 -m alignment household status
+  PYTHONPATH=src python3 -m alignment household dashboard -o outputs/household_latest.png
   PYTHONPATH=src python3 -m alignment demo -o outputs
 """.strip()
 
@@ -211,6 +332,40 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--json", action="store_true", help="emit gate, fruit, may_auto_post, and reply as JSON")
     rp.add_argument("--max-chars", type=int, default=280)
     rp.set_defaults(func=cmd_reply)
+
+    gd = sub.add_parser("guard", help="O-first AI guardrail over a request and draft (§7.2)")
+    gd.add_argument("-p", "--request", help="user request text")
+    gd.add_argument("--request-file", help="file containing the user request")
+    gd.add_argument("-s", "--sample", choices=sorted(SAMPLES), help="built-in sample for the request score")
+    gd.add_argument("--request-json", help="JSON file for the request ScoreResult")
+    gd.add_argument("--draft", help="canned model draft (offline, skip generation)")
+    gd.add_argument("--draft-sample", choices=sorted(SAMPLES), help="built-in sample for the draft score")
+    gd.add_argument("--draft-json", help="JSON file for the draft ScoreResult")
+    gd.add_argument("--max-retries", type=int, default=1)
+    gd.add_argument("--json", action="store_true")
+    gd.set_defaults(func=cmd_guard)
+
+    hh = sub.add_parser("household", help="Personal / household log of scored choices")
+    hh_sub = hh.add_subparsers(dest="household_cmd", required=True)
+    hh_add = hh_sub.add_parser("add", help="Append a scored choice to the local JSON log")
+    hh_add.add_argument("--label", required=True)
+    hh_add.add_argument("--text", required=True)
+    hh_add.add_argument("--note", default="")
+    hh_add.add_argument("--who", default="", help="optional name when sharing a household file")
+    hh_add.add_argument("--score-sample", choices=sorted(SAMPLES))
+    hh_add.add_argument("--score", help="JSON file from the scorer")
+    hh_add.add_argument("--log", default=str(DEFAULT_LOG), help="path to household JSON (default: household.json)")
+    hh_add.set_defaults(func=cmd_household_add)
+
+    hh_st = hh_sub.add_parser("status", help="Show running mean(v), min(v), and gate counts")
+    hh_st.add_argument("--log", default=str(DEFAULT_LOG))
+    hh_st.add_argument("--json", action="store_true")
+    hh_st.set_defaults(func=cmd_household_status)
+
+    hh_dash = hh_sub.add_parser("dashboard", help="Render the latest entry as a paired-circle PNG")
+    hh_dash.add_argument("--log", default=str(DEFAULT_LOG))
+    hh_dash.add_argument("-o", "--output", default="outputs/household_latest.png")
+    hh_dash.set_defaults(func=cmd_household_dashboard)
     return p
 
 
@@ -229,8 +384,11 @@ def main(argv=None) -> int:
     except FileNotFoundError as exc:
         sys.stderr.write(f"{exc}\n")
         return 2
-    except (json.JSONDecodeError, ValueError) as exc:
+    except json.JSONDecodeError as exc:
         sys.stderr.write(f"invalid scorer output: {exc}\n")
+        return 2
+    except ValueError as exc:
+        sys.stderr.write(f"{exc}\n")
         return 2
 
 

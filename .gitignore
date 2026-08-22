@@ -15,3 +15,5 @@ build/
 /lorenz_attractor.png
 /motion_regimes.png
 /outputs/scoring_engine_prompt.txt
+/household.json
+*.household.json
