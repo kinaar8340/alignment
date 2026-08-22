@@ -112,6 +112,19 @@ def test_cli_bot_consider_refuse(tmp_path: Path, capsys):
     assert json.loads(log.read_text())[0]["posted"] is False
 
 
+def test_x_api_poster_requires_credentials():
+    from alignment.x_bot import BotError, x_api_poster
+    from unittest.mock import patch
+
+    with patch.dict("os.environ", {}, clear=True):
+        try:
+            x_api_poster("hello")
+        except BotError as exc:
+            assert "X_API_KEY" in str(exc) or "X_USER_ACCESS_TOKEN" in str(exc)
+        else:
+            raise AssertionError("expected BotError")
+
+
 def test_cli_bot_consider_flow(tmp_path: Path, capsys):
     assert (
         main(

@@ -33,6 +33,7 @@ Repo: [https://github.com/kinaar8340/alignment](https://github.com/kinaar8340/al
 | Corpus | `corpus.py` | Long texts + A1–A28 / M1–M28 hits | Consumes |
 | Agent | `agent.py` | Planner → critic → executor | Consumes |
 | X bot | `x_bot.py` | Post only when the gate allows | Consumes |
+| Visualizer | `torus.py` | Year of circles stacked into a torus + 2D trends | Displays |
 
 ## Geometry
 
@@ -145,6 +146,12 @@ python3 -m alignment bot consider -p "We practiced correction together." -s flow
 python3 -m alignment bot consider -p "Farm engagement by stoking outrage." -s refuse
 python3 -m alignment bot consider -p "mixed take" -s correct --on-correct skip
 python3 -m alignment bot log
+
+# torus visualizer — stacked unit-circle frames + 2D trends
+python3 -m alignment visualize demo -o outputs/torus_dashboard.png
+python3 -m alignment visualize fetch --user kinaar8340 --since 2025-08-22 -o data/posts.jsonl
+python3 -m alignment visualize score --posts data/posts.jsonl --live --limit 40 --spread -o data/scores.jsonl
+python3 -m alignment visualize render --scores data/scores.jsonl -o outputs/torus_kinaar.png
 ```
 
 ## Score a real text
@@ -282,6 +289,19 @@ Default is **dry-run**. It never farms engagement.
 `--post` actually calls `POST https://api.x.com/2/tweets` and requires `X_USER_ACCESS_TOKEN`. Programmatic *replies* on self-serve X API tiers only work if the original author @mentioned the bot (or quoted it). Original posts (no `--reply-to`) are unchanged.
 
 Walk-aways go to local `x_bot.json` (gitignored).
+
+### Torus visualizer
+
+Each scored post is one unit-circle frame. Time wraps around the major radius of a torus; the ten slices ride the minor radius. Green = aligned net, red = misaligned net. Beside it: 2D trends of `mean(v)` vs `|mean(w)|`, a slice heatmap, and the gate along the year.
+
+Start with a synthetic year, then ingest a real user:
+
+```bash
+python3 -m alignment visualize demo --weeks 52 -o outputs/torus_dashboard.png
+python3 -m alignment visualize fetch --user kinaar8340 --since 2025-08-22 -o data/posts.jsonl
+```
+
+Live Grok scoring a full year is slow (one call per post). Use `--limit` first, save `data/scores.jsonl`, then `visualize render`.
 
 ### Agent
 

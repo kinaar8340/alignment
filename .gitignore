@@ -21,3 +21,7 @@ build/
 *.household.json
 /x_bot.json
 *.x_bot.json
+/data/
+alignment_engine_keys.*
+*_keys.txt
+*_keys.png

@@ -19,6 +19,8 @@ from .corpus import analyze_corpus, corpus_prompt, format_report, load_corpus
 from .agent import AlignedAgent
 from .live import LiveError, detect_backend, pipeline_live, score_live, reply_live, complete
 from .x_bot import BotError, BotLog, DEFAULT_LOG as BOT_LOG, consider as bot_consider
+from .timeline import demo_year, fetch_user_posts, read_posts, read_scores, score_posts, trajectory_stats, write_posts, write_scores
+from .torus import render_torus_dashboard
 
 
 def _read(path: str) -> str:
@@ -522,6 +524,63 @@ def cmd_bot_log(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_visualize_demo(args: argparse.Namespace) -> int:
+    rows = demo_year(username=args.user or "demo", weeks=args.weeks)
+    path = render_torus_dashboard(rows, title=args.title or "Alignment torus — demo year", save_path=args.output)
+    stats = trajectory_stats(rows)
+    print(f"n={stats['n']} avg_net={stats['avg_net']:.2f} gates={stats['gate_counts']}")
+    print(path)
+    return 0
+
+
+def cmd_visualize_fetch(args: argparse.Namespace) -> int:
+    from datetime import datetime, timezone
+
+    start = datetime.fromisoformat(args.since).replace(tzinfo=timezone.utc) if args.since else None
+    posts = fetch_user_posts(args.user, start=start, max_posts=args.limit, include_replies=not args.no_replies)
+    path = write_posts(posts, args.output)
+    replies = sum(1 for p in posts if p.is_reply)
+    print(f"wrote {len(posts)} posts ({replies} replies) → {path}")
+    return 0
+
+
+def cmd_visualize_score(args: argparse.Namespace) -> int:
+    from .timeline import select_posts
+
+    posts = [p for p in read_posts(args.posts) if len((p.text or "").strip()) >= args.min_chars]
+    posts = select_posts(posts, limit=args.limit, spread=args.spread, stride=args.stride)
+    if not posts:
+        sys.stderr.write("error: no posts in file\n")
+        return 2
+    print(
+        f"scoring {len(posts)} posts  "
+        f"{posts[0].created_at[:10]} → {posts[-1].created_at[:10]}  "
+        f"(spread={args.spread} stride={args.stride})"
+    )
+    if args.live:
+        from .live import score_live
+
+        def scorer(text: str):
+            return score_live(text, model=args.model, backend=args.backend)
+
+        rows = score_posts(posts, scorer)
+    else:
+        sys.stderr.write("error: pass --live to score with Grok (or use visualize demo)\n")
+        return 2
+    path = write_scores(rows, args.output)
+    print(json.dumps(trajectory_stats(rows), indent=2))
+    print(path)
+    return 0
+
+
+def cmd_visualize_render(args: argparse.Namespace) -> int:
+    rows = read_scores(args.scores)
+    path = render_torus_dashboard(rows, title=args.title or "Alignment torus", save_path=args.output)
+    print(json.dumps(trajectory_stats(rows), indent=2))
+    print(path)
+    return 0
+
+
 _EPILOG = """
 examples:
   PYTHONPATH=src python3 -m alignment report -s flow
@@ -540,6 +599,9 @@ examples:
   PYTHONPATH=src python3 -m alignment agent --goal "repair a household" --plan "Practice correction together." --score-sample flow
   PYTHONPATH=src python3 -m alignment bot consider -p "We practiced correction together." -s flow
   PYTHONPATH=src python3 -m alignment bot consider -p "Farm engagement by stoking outrage." -s refuse
+  PYTHONPATH=src python3 -m alignment visualize demo -o outputs/torus_dashboard.png
+  PYTHONPATH=src python3 -m alignment visualize fetch --user kinaar8340 --since 2025-08-22 -o data/posts.jsonl
+  PYTHONPATH=src python3 -m alignment visualize render --scores data/scores.jsonl -o outputs/torus_dashboard.png
   PYTHONPATH=src python3 -m alignment demo -o outputs
 """.strip()
 
@@ -706,6 +768,42 @@ def build_parser() -> argparse.ArgumentParser:
     bl.add_argument("--tail", type=int, default=20)
     bl.add_argument("--json", action="store_true")
     bl.set_defaults(func=cmd_bot_log)
+
+    vz = sub.add_parser("visualize", help="Torus of stacked unit circles + 2D alignment trends")
+    vz_sub = vz.add_subparsers(dest="visualize_cmd", required=True)
+    vd = vz_sub.add_parser("demo", help="Render a synthetic year (no live scoring)")
+    vd.add_argument("-o", "--output", default="outputs/torus_dashboard.png")
+    vd.add_argument("--weeks", type=int, default=52)
+    vd.add_argument("--user", default="demo")
+    vd.add_argument("--title")
+    vd.set_defaults(func=cmd_visualize_demo)
+
+    vf = vz_sub.add_parser("fetch", help="Download a year of posts/replies from X")
+    vf.add_argument("--user", required=True)
+    vf.add_argument("--since", default="2025-08-22", help="ISO date YYYY-MM-DD")
+    vf.add_argument("--limit", type=int, default=500)
+    vf.add_argument("--no-replies", action="store_true")
+    vf.add_argument("-o", "--output", default="data/posts.jsonl")
+    vf.set_defaults(func=cmd_visualize_fetch)
+
+    vs = vz_sub.add_parser("score", help="Score ingested posts with live Grok")
+    vs.add_argument("--posts", required=True)
+    vs.add_argument("-o", "--output", default="data/scores.jsonl")
+    vs.add_argument("--live", action="store_true")
+    vs.add_argument("--limit", type=int, default=40)
+    vs.add_argument("--stride", type=int, default=1, help="keep every Nth post after the length filter")
+    vs.add_argument("--spread", dest="spread", action="store_true", default=True, help="pick --limit posts evenly across the archive (default)")
+    vs.add_argument("--no-spread", dest="spread", action="store_false", help="take the first --limit posts instead")
+    vs.add_argument("--min-chars", type=int, default=40, help="skip URL-only / stub posts")
+    vs.add_argument("-m", "--model", default="grok-4.6")
+    vs.add_argument("--backend", choices=["auto", "api", "cli"], default="auto")
+    vs.set_defaults(func=cmd_visualize_score)
+
+    vr = vz_sub.add_parser("render", help="Render torus + trend charts from scored JSONL")
+    vr.add_argument("--scores", required=True)
+    vr.add_argument("-o", "--output", default="outputs/torus_dashboard.png")
+    vr.add_argument("--title")
+    vr.set_defaults(func=cmd_visualize_render)
     return p
 
 

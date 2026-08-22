@@ -10,12 +10,18 @@ TWITTER_BEARER_TOKEN) and an explicit --post. The bot asks first.
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import os
+import time
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
+from urllib.parse import quote
 
 import httpx
 
@@ -25,6 +31,36 @@ from .x_reply import dominant_fruit, suggest_reply
 
 DEFAULT_LOG = Path(os.environ.get("ALIGNMENT_BOT_LOG", "x_bot.json"))
 X_POSTS_URL = "https://api.x.com/2/tweets"
+
+
+def load_dotenv(path: Union[str, Path, None] = None) -> None:
+    """Load KEY=VALUE from a gitignored .env into os.environ (no overwrite)."""
+    candidates = []
+    if path is not None:
+        candidates.append(Path(path))
+    candidates.extend(
+        [
+            Path.cwd() / ".env",
+            Path(__file__).resolve().parents[2] / ".env",
+        ]
+    )
+    seen = set()
+    for p in candidates:
+        p = p.resolve()
+        if p in seen or not p.is_file():
+            continue
+        seen.add(p)
+        for line in p.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, val = line.split("=", 1)
+            key = key.strip()
+            val = val.strip().strip("'").strip('"')
+            os.environ.setdefault(key, val)
+
+
+load_dotenv()
 
 Poster = Callable[[str, Optional[str]], Dict[str, Any]]
 
@@ -109,22 +145,86 @@ def dry_run_poster(text: str, reply_to: Optional[str] = None) -> Dict[str, Any]:
     return {"id": "dry-run", "text": text, "reply_to": reply_to}
 
 
+def _env(*names: str) -> str:
+    for name in names:
+        val = os.environ.get(name, "").strip()
+        if val:
+            return val
+    return ""
+
+
+def _oauth1_header(method: str, url: str, extra_params: Optional[Dict[str, str]] = None) -> str:
+    api_key = _env("X_API_KEY", "TWITTER_API_KEY")
+    api_secret = _env("X_API_SECRET", "TWITTER_API_SECRET")
+    token = _env("X_ACCESS_TOKEN", "TWITTER_ACCESS_TOKEN")
+    token_secret = _env("X_ACCESS_TOKEN_SECRET", "TWITTER_ACCESS_TOKEN_SECRET")
+    if not all([api_key, api_secret, token, token_secret]):
+        raise BotError("incomplete OAuth 1.0a credentials")
+    oauth = {
+        "oauth_consumer_key": api_key,
+        "oauth_nonce": uuid.uuid4().hex,
+        "oauth_signature_method": "HMAC-SHA1",
+        "oauth_timestamp": str(int(time.time())),
+        "oauth_token": token,
+        "oauth_version": "1.0",
+    }
+
+    def q(s: str) -> str:
+        return quote(str(s), safe="")
+
+    sign_params = dict(oauth)
+    if extra_params:
+        sign_params.update({k: str(v) for k, v in extra_params.items() if v is not None})
+    base = "&".join(f"{q(k)}={q(v)}" for k, v in sorted(sign_params.items()))
+    base_string = f"{method.upper()}&{q(url)}&{q(base)}"
+    signing_key = f"{q(api_secret)}&{q(token_secret)}"
+    digest = hmac.new(signing_key.encode(), base_string.encode(), hashlib.sha1).digest()
+    oauth["oauth_signature"] = base64.b64encode(digest).decode()
+    return "OAuth " + ", ".join(f'{q(k)}="{q(v)}"' for k, v in sorted(oauth.items()))
+
+
+def x_api_get(url: str, params: Optional[Dict[str, str]] = None, timeout: float = 30.0) -> Dict[str, Any]:
+    """Signed GET for timeline lookup. Same OAuth 1.0a keys as posting."""
+    params = {k: str(v) for k, v in (params or {}).items() if v is not None}
+    headers = {"Authorization": _oauth1_header("GET", url, extra_params=params)}
+    resp = httpx.get(url, params=params or None, headers=headers, timeout=timeout)
+    if resp.status_code >= 400:
+        raise BotError(f"X API GET {resp.status_code}: {resp.text[:500]}")
+    return resp.json()
+
+
 def x_api_poster(text: str, reply_to: Optional[str] = None) -> Dict[str, Any]:
-    token = os.environ.get("X_USER_ACCESS_TOKEN") or os.environ.get("TWITTER_BEARER_TOKEN")
-    if not token:
-        raise BotError(
-            "Real posting needs X_USER_ACCESS_TOKEN (OAuth 2.0 user token with tweet.write). "
-            "Run without --post to dry-run."
-        )
     body: Dict[str, Any] = {"text": text}
     if reply_to:
         body["reply"] = {"in_reply_to_tweet_id": str(reply_to)}
-    resp = httpx.post(
-        X_POSTS_URL,
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        json=body,
-        timeout=30.0,
+    bearer = _env("X_USER_ACCESS_TOKEN", "TWITTER_BEARER_TOKEN")
+    oauth1 = all(
+        [
+            _env("X_API_KEY", "TWITTER_API_KEY"),
+            _env("X_API_SECRET", "TWITTER_API_SECRET"),
+            _env("X_ACCESS_TOKEN", "TWITTER_ACCESS_TOKEN"),
+            _env("X_ACCESS_TOKEN_SECRET", "TWITTER_ACCESS_TOKEN_SECRET"),
+        ]
     )
+    if oauth1:
+        headers = {
+            "Authorization": _oauth1_header("POST", X_POSTS_URL),
+            "Content-Type": "application/json",
+        }
+    elif bearer:
+        headers = {
+            "Authorization": f"Bearer {bearer}",
+            "Content-Type": "application/json",
+        }
+    else:
+        raise BotError(
+            "Real posting needs credentials in the environment or a gitignored .env:\n"
+            "  X_API_KEY / X_API_SECRET / X_ACCESS_TOKEN / X_ACCESS_TOKEN_SECRET\n"
+            "  (from the alignment_engine app in the X Developer Console)\n"
+            "or X_USER_ACCESS_TOKEN (OAuth 2.0 user token with tweet.write).\n"
+            "Run without --post to dry-run."
+        )
+    resp = httpx.post(X_POSTS_URL, headers=headers, json=body, timeout=30.0)
     if resp.status_code >= 400:
         raise BotError(f"X API {resp.status_code}: {resp.text[:500]}")
     data = resp.json()
