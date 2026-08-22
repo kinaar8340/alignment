@@ -34,7 +34,7 @@ Repo: [https://github.com/kinaar8340/alignment](https://github.com/kinaar8340/al
 | Agent | `agent.py` | Planner → critic → executor | Consumes |
 | X bot | `x_bot.py` | Post only when the gate allows | Consumes |
 | Visualizer | `torus.py` | Year of circles stacked into a torus + 2D trends | Displays |
-| Aura | `aura.py` | Seven heatmaps; origin is mean net | Displays |
+| Aura | `aura.py` | Seven heatmaps, origin mean, analog alignment needle | Displays |
 
 ## Geometry
 
@@ -317,7 +317,7 @@ The torus already encodes the 10-slice state vector Ψ evolving under
 dΨ/dt = O[Ψ] + σ(Z)·C[Ψ, E] + (1 − σ(Z))·A[Ψ]
 ```
 
-`visualize aura` draws seven human figures on a Flower of Life, feet toward the origin. Each ray is one heavenly virtue (Humility … Diligence) and is a **frequency heatmap** of that slice's `net`: −10 is lowest visible frequency (red), +10 is highest (violet), and 0 is no color. The circle at the origin is the aura score: the mean of the seven nets, mapped through the same heatmap. Time is the torus θ. ffmpeg (`libx264`) writes the mp4; `--still-only` writes the mean-field PNG without it.
+`visualize aura` draws seven human figures on a Flower of Life, feet toward the origin. Each ray is one heavenly virtue (Humility … Diligence) and is a **frequency heatmap** of that slice's `net`: −10 is lowest visible frequency (red), +10 is highest (violet), and 0 is no color. The circle at the origin is the mean of the seven nets on that same heatmap. An analog needle below the flower projects the collective onto a single misaligned → aligned scale (mean net, glow fraction, and recent rate of change) so direction of travel is readable at a glance. Time is the torus θ. ffmpeg (`libx264`) writes the mp4; `--still-only` writes the mean-field PNG without it.
 
 ```bash
 python3 -m alignment visualize aura --demo --weeks 52 -o outputs/aura.mp4
@@ -359,7 +359,7 @@ out = agent.step("repair a household")
 | `src/alignment/x_bot.py` | X bot: post only on FLOW (CORRECT optional) |
 | `src/alignment/timeline.py` | X ingest, spread/stride sampling, timed scores |
 | `src/alignment/torus.py` | Stacked unit-circle torus + 2D trends |
-| `src/alignment/aura.py` | Seven heatmaps; origin is mean net |
+| `src/alignment/aura.py` | Seven heatmaps, origin mean, analog alignment needle |
 | `prompts/scoring_engine.txt` | Short scorer prompt |
 | `examples/flow.json` … `doom_loop.json` | Four-gate fixtures |
 | `examples/corpus_sample.json` | Corpus fixture with A/M hits |

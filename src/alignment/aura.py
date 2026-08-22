@@ -5,8 +5,10 @@ heads outward. Each ray is one heavenly virtue (Humility … Diligence).
 Color is a frequency heatmap of that slice's net: −10 is lowest visible
 frequency (red), +10 is highest (violet), and 0 is no color.
 
-The circle at the origin is the aura score: mean of the seven nets,
-mapped through the same heatmap. No second scoring surface.
+The circle at the origin is the mean of the seven nets, mapped through
+the same heatmap. An analog needle below the flower projects that
+collective onto a single misaligned → aligned scale so direction of
+travel is readable at a glance. No second scoring surface.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Circle, Ellipse, Rectangle
+from matplotlib.patches import Circle, Ellipse, Polygon, Rectangle, Wedge
 from matplotlib.transforms import Affine2D
 
 from .slices import ALIGNED_NAMES
@@ -43,6 +45,10 @@ FIGURE_NAMES = tuple(ALIGNED_NAMES[i] for i in FIGURE_SLICES)
 # Visible spectrum: −10 → 700 nm (red, low freq), +10 → 420 nm (violet, high freq)
 _NM_LOW = 700.0
 _NM_HIGH = 420.0
+GLOW_THRESHOLD = 1.0
+_METER_CX = 0.0
+_METER_CY = -8.95
+_METER_R = 1.45
 
 
 def _angles() -> np.ndarray:
@@ -123,6 +129,57 @@ def mean_ray_net(net: Sequence[float]) -> float:
     """Aura score at the origin: mean of the seven figure nets."""
     rays = _ray_nets(net)
     return float(sum(rays) / float(len(rays)))
+
+
+def glowing_fraction(net: Sequence[float], threshold: float = GLOW_THRESHOLD) -> float:
+    """Share of the seven figures with net above the glow threshold."""
+    rays = _ray_nets(net)
+    return float(sum(1 for n in rays if n > threshold) / float(len(rays)))
+
+
+def meter_score(
+    net: Sequence[float],
+    prev_mean: Optional[float] = None,
+    *,
+    glow_threshold: float = GLOW_THRESHOLD,
+) -> dict:
+    """Scalar in [−10, +10] for the analog needle.
+
+    0.80 × mean(net) + 2.0 × (frac_high − frac_low), then a clipped
+    rate-of-change lead so the needle shows direction of travel.
+    """
+    rays = _ray_nets(net)
+    n = float(len(rays))
+    avg = float(sum(rays) / n)
+    frac_hi = sum(1.0 for x in rays if x > glow_threshold) / n
+    frac_lo = sum(1.0 for x in rays if x < -glow_threshold) / n
+    score = 0.80 * avg + 2.0 * (frac_hi - frac_lo)
+    delta = 0.0
+    if prev_mean is not None:
+        delta = avg - float(prev_mean)
+        score = score + float(np.clip(delta, -2.0, 2.0))
+    return {
+        "score": float(np.clip(score, -10.0, 10.0)),
+        "mean": avg,
+        "frac": frac_hi,
+        "delta": delta,
+    }
+
+
+def meter_angle(score: float) -> float:
+    """−10 → π (left), +10 → 0 (right), 0 → π/2 (up)."""
+    t = float(np.clip((float(score) + 10.0) / 20.0, 0.0, 1.0))
+    return float(np.pi * (1.0 - t))
+
+
+def _meter_rgb(t: float) -> Tuple[float, float, float]:
+    """t ∈ [0, 1]: deep red → amber → bright green."""
+    t = float(np.clip(t, 0.0, 1.0))
+    if t < 0.5:
+        u = t * 2.0
+        return (0.92, 0.14 + 0.52 * u, 0.10)
+    u = (t - 0.5) * 2.0
+    return (0.90 - 0.68 * u, 0.66 + 0.20 * u, 0.10 + 0.22 * u)
 
 
 def interpolate_rows(
@@ -294,8 +351,8 @@ def render_aura_ring(
     return overall
 
 
-def _heatmap_legend(ax, *, y: float = -6.72) -> None:
-    x0, width, height = -2.4, 4.8, 0.18
+def _heatmap_legend(ax, *, y: float = -10.22) -> None:
+    x0, width, height = -2.4, 4.8, 0.16
     n = 64
     step = width / n
     for i in range(n):
@@ -312,9 +369,96 @@ def _heatmap_legend(ax, *, y: float = -6.72) -> None:
                 zorder=8,
             )
         )
-    ax.text(x0, y - 0.28, "−10", ha="center", va="top", fontsize=7, color=_NEUTRAL, zorder=8)
-    ax.text(0.0, y - 0.28, "0", ha="center", va="top", fontsize=7, color=_NEUTRAL, zorder=8)
-    ax.text(x0 + width, y - 0.28, "+10", ha="center", va="top", fontsize=7, color=_NEUTRAL, zorder=8)
+    ax.text(x0, y - 0.26, "−10", ha="center", va="top", fontsize=6.5, color=_NEUTRAL, zorder=8)
+    ax.text(0.0, y - 0.26, "0", ha="center", va="top", fontsize=6.5, color=_NEUTRAL, zorder=8)
+    ax.text(x0 + width, y - 0.26, "+10", ha="center", va="top", fontsize=6.5, color=_NEUTRAL, zorder=8)
+
+
+def _draw_meter(
+    ax,
+    net: Sequence[float],
+    *,
+    prev_net: Optional[Sequence[float]] = None,
+    cx: float = _METER_CX,
+    cy: float = _METER_CY,
+    radius: float = _METER_R,
+) -> dict:
+    """Classic semicircle needle gauge under the flower."""
+    prev_mean = mean_ray_net(prev_net) if prev_net is not None else None
+    info = meter_score(net, prev_mean)
+    ax.add_patch(
+        Wedge(
+            (cx, cy),
+            radius * 1.22,
+            0,
+            180,
+            facecolor="#0c0e12",
+            edgecolor="#4a5160",
+            linewidth=1.3,
+            zorder=12,
+        )
+    )
+    ax.plot(
+        [cx - radius * 1.18, cx + radius * 1.18],
+        [cy, cy],
+        color="#4a5160",
+        linewidth=1.1,
+        zorder=12,
+        solid_capstyle="round",
+    )
+    nseg = 52
+    for i in range(nseg):
+        t0, t1 = i / nseg, (i + 1) / nseg
+        a0 = np.degrees(np.pi * (1.0 - t0))
+        a1 = np.degrees(np.pi * (1.0 - t1))
+        ax.add_patch(
+            Wedge(
+                (cx, cy),
+                radius,
+                min(a0, a1),
+                max(a0, a1),
+                width=radius * 0.16,
+                facecolor=_meter_rgb(0.5 * (t0 + t1)),
+                edgecolor="none",
+                zorder=13,
+            )
+        )
+    for val in (-10, -5, 0, 5, 10):
+        ang = meter_angle(val)
+        inner, outer = radius * 0.78, radius * 1.02
+        ax.plot(
+            [cx + inner * np.cos(ang), cx + outer * np.cos(ang)],
+            [cy + inner * np.sin(ang), cy + outer * np.sin(ang)],
+            color="#e6edf3",
+            linewidth=1.15 if val in (-10, 0, 10) else 0.7,
+            zorder=14,
+            solid_capstyle="round",
+        )
+    ax.text(cx - radius - 0.12, cy - 0.12, "misaligned", ha="right", va="top", fontsize=6.5, color="#f85149", zorder=15)
+    ax.text(cx, cy + radius + 0.18, "transitional", ha="center", va="bottom", fontsize=6.5, color="#d29922", zorder=15)
+    ax.text(cx + radius + 0.12, cy - 0.12, "aligned", ha="left", va="top", fontsize=6.5, color="#3fb950", zorder=15)
+
+    if prev_net is not None:
+        ghost = meter_score(prev_net, None)
+        pang = meter_angle(ghost["score"])
+        ax.plot(
+            [cx, cx + radius * 0.86 * np.cos(pang)],
+            [cy, cy + radius * 0.86 * np.sin(pang)],
+            color="#8b949e",
+            linewidth=1.4,
+            alpha=0.32,
+            zorder=15,
+            solid_capstyle="round",
+        )
+
+    ang = meter_angle(info["score"])
+    tip = (cx + radius * 0.90 * np.cos(ang), cy + radius * 0.90 * np.sin(ang))
+    left = (cx + 0.09 * np.cos(ang + np.pi / 2), cy + 0.09 * np.sin(ang + np.pi / 2))
+    right = (cx + 0.09 * np.cos(ang - np.pi / 2), cy + 0.09 * np.sin(ang - np.pi / 2))
+    tail = (cx - 0.22 * np.cos(ang), cy - 0.22 * np.sin(ang))
+    ax.add_patch(Polygon([left, tip, right, tail], closed=True, facecolor="#f0f3f6", edgecolor="#111111", linewidth=0.45, zorder=16))
+    ax.add_patch(Circle((cx, cy), 0.13, facecolor="#f0f3f6", edgecolor="#111111", linewidth=0.6, zorder=17))
+    return info
 
 
 def _state_from_row(row: TimedScore, n: int) -> dict:
@@ -341,17 +485,18 @@ def render_aura_frame(
     breath: float = 1.0,
     dpi: int = 120,
     tight: bool = True,
+    prev_net: Optional[Sequence[float]] = None,
 ) -> Path:
     del precession
     save_path = Path(save_path)
     save_path.parent.mkdir(parents=True, exist_ok=True)
     v, w, net, gate = state["v"], state["w"], state["net"], state["gate"]
-    fig, ax = plt.subplots(figsize=(10.0, 10.6), facecolor=_BG)
-    fig.subplots_adjust(left=0.03, right=0.97, top=0.90, bottom=0.07)
+    fig, ax = plt.subplots(figsize=(10.0, 12.6), facecolor=_BG)
+    fig.subplots_adjust(left=0.03, right=0.97, top=0.92, bottom=0.05)
     ax.set_facecolor(_BG)
     ax.set_aspect("equal")
     ax.set_xlim(-7.9, 7.9)
-    ax.set_ylim(-7.6, 8.4)
+    ax.set_ylim(-10.85, 8.4)
     ax.axis("off")
 
     ring_col = GATE_COLORS.get(gate, _GOLD)
@@ -365,6 +510,7 @@ def render_aura_frame(
         mean_w=state["mean_w"],
         breath=breath,
     )
+    _draw_meter(ax, net, prev_net=prev_net)
     _heatmap_legend(ax)
 
     ax.text(0, 7.85, title, ha="center", fontsize=15, color=_TEXT, fontweight="bold")
@@ -383,10 +529,10 @@ def render_aura_frame(
     )
     ax.text(
         0,
-        -7.38,
-        "Heatmap  ·  red = −10 (low freq)  ·  none = 0  ·  violet = +10 (high freq)  ·  origin = mean",
+        -10.58,
+        "Needle: misaligned → aligned  ·  figures: frequency heatmap  ·  origin = mean(net₇)",
         ha="center",
-        fontsize=8,
+        fontsize=7.5,
         color=_NEUTRAL,
     )
     fig.savefig(
@@ -457,6 +603,7 @@ def render_aura_video(
     tmp = Path(tempfile.mkdtemp(prefix="aura_frames_"))
     paths = []
     n = len(frames)
+    prev_net: Optional[List[float]] = None
     for i, state in enumerate(frames):
         t = i / max(n - 1, 1)
         breath = 1.0 + 0.06 * np.sin(2.0 * np.pi * 2.0 * t) * (0.35 + 0.65 * max(0.0, state["mean_v"]) / 10.0)
@@ -470,7 +617,9 @@ def render_aura_video(
             breath=breath,
             dpi=dpi,
             tight=False,
+            prev_net=prev_net,
         )
+        prev_net = list(state["net"])
         paths.append(p)
         if progress is not None:
             progress(i, n)

@@ -7,11 +7,14 @@ import numpy as np
 import pytest
 
 from alignment.aura import (
+    FIGURE_SLICES,
     N_FIGURES,
     interpolate_rows,
     lerp,
     lerp_vec,
     mean_ray_net,
+    meter_angle,
+    meter_score,
     net_heatmap,
     net_to_wavelength,
     overall_glow,
@@ -51,6 +54,33 @@ def test_mean_ray_net_is_average_of_seven():
     net = [0.0] * 10
     net[2] = 7.0  # Humility
     assert mean_ray_net(net) == pytest.approx(7.0 / N_FIGURES)
+
+
+def test_meter_score_zero_sits_at_center():
+    net = [0.0] * 10
+    info = meter_score(net)
+    assert info["score"] == pytest.approx(0.0)
+    assert meter_angle(0.0) == pytest.approx(np.pi / 2.0)
+
+
+def test_meter_score_positive_moves_right():
+    net = [0.0] * 10
+    for i in FIGURE_SLICES:
+        net[i] = 8.0
+    info = meter_score(net)
+    assert info["score"] > 6.0
+    assert meter_angle(info["score"]) < np.pi / 2.0
+
+
+def test_meter_score_follows_rate_of_change():
+    net = [0.0] * 10
+    for i in FIGURE_SLICES:
+        net[i] = 4.0
+    rising = meter_score(net, prev_mean=0.0)
+    falling = meter_score(net, prev_mean=8.0)
+    assert rising["score"] > falling["score"]
+    assert rising["delta"] > 0
+    assert falling["delta"] < 0
 
 
 def test_overall_glow_by_gate():
