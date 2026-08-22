@@ -88,6 +88,11 @@ python3 -m alignment sample flow
 python3 -m alignment prompt --short
 python3 -m alignment lorenz
 python3 -m alignment demo -o outputs
+
+# X reply from a scored gate (§7.3) — never re-decides the gate
+python3 -m alignment reply -s flow -p "A household that practices correction."
+python3 -m alignment reply examples/refuse.json --post-file original.txt --json
+python3 -m alignment reply -s correct --prompt -p "mixed take"
 ```
 
 Samples: `flow`, `refuse`, `correct`, `doom_loop`.
@@ -139,6 +144,7 @@ create_dashboard(result, save_path="dashboard.png")
 | `src/alignment/prompt.py` | System prompt (tables + full docs) |
 | `src/alignment/dashboard.py` | Paired-circle PNG |
 | `src/alignment/dynamics.py` | Lorenz attractor + 10-slice motion equation |
+| `src/alignment/x_reply.py` | §7.3 X reply / amplification from the gate |
 | `prompts/scoring_engine.txt` | Short scorer prompt |
 | `examples/*.json` | Fixtures for the four gates |
 | `images/` | Unit-circle and universal-dynamics figures |
@@ -172,7 +178,7 @@ python3 -m alignment lorenz --lorenz outputs/lorenz_attractor.png --motion outpu
 
 The engine is the shared cornerstone. Later layers call the same `ScoreResult` / gate:
 
-1. **X reply and amplification** — FLOW: add light; CORRECT: one Observer question; REFUSE / STOP_FEEDING: name the fruit, do not echo the closed metric
+1. **X reply and amplification** (`python3 -m alignment reply`) — FLOW: add light; CORRECT: one Observer question; REFUSE / STOP_FEEDING: name the fruit, do not echo the closed metric. Auto-post only on FLOW / CORRECT.
 2. **AI guardrail** — score the request and the draft; O-first; σ(Z) when a tool or loss takes without asking
 3. **Personal / household dashboard** — daily choices scored on the ten slices
 4. **Corpus analyzer** — A1–A28 / M1–M28 with citations; public-correctability audit

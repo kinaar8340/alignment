@@ -12,6 +12,7 @@ from .dynamics import render_lorenz, render_motion_regimes
 from .engine import parse_llm_output, print_report
 from .prompt import system_prompt
 from .samples import SAMPLES
+from .x_reply import build_reply_prompt, dominant_fruit, may_auto_post, suggest_reply
 
 
 def _read(path: str) -> str:
@@ -109,12 +110,50 @@ def cmd_score_dict(args: argparse.Namespace) -> int:
     return 0
 
 
+def _post_text(args: argparse.Namespace) -> str:
+    if getattr(args, "post_file", None):
+        return _read(args.post_file)
+    if getattr(args, "post", None):
+        return args.post
+    if not sys.stdin.isatty():
+        return sys.stdin.read()
+    return ""
+
+
+def cmd_reply(args: argparse.Namespace) -> int:
+    result = _score_from_args(args)
+    post = _post_text(args)
+    if args.dump_prompt:
+        system, user = build_reply_prompt(post or "(no post supplied)", result, max_chars=args.max_chars)
+        sys.stdout.write(system + "\n\n---\n\n" + user + "\n")
+        return 0
+    reply = suggest_reply(post or "(no post supplied)", result, max_chars=args.max_chars)
+    if args.json:
+        json.dump(
+            {
+                "gate": result.gate,
+                "fruit": dominant_fruit(result),
+                "may_auto_post": may_auto_post(result),
+                "action": result.action,
+                "reply": reply,
+            },
+            sys.stdout,
+            indent=2,
+        )
+        sys.stdout.write("\n")
+        return 0
+    print(reply)
+    return 0
+
+
 _EPILOG = """
 examples:
   PYTHONPATH=src python3 -m alignment report -s flow
   PYTHONPATH=src python3 -m alignment report examples/flow.json
   PYTHONPATH=src python3 -m alignment dashboard -s refuse -o refuse.png
   PYTHONPATH=src python3 -m alignment sample flow > /tmp/score.json
+  PYTHONPATH=src python3 -m alignment reply -s flow -p "A household that practices correction."
+  PYTHONPATH=src python3 -m alignment reply examples/refuse.json --post-file original.txt --json
   PYTHONPATH=src python3 -m alignment demo -o outputs
 """.strip()
 
@@ -162,12 +201,22 @@ def build_parser() -> argparse.ArgumentParser:
     sm = sub.add_parser("sample", help="Print a canonical sample JSON")
     sm.add_argument("sample", choices=sorted(SAMPLES))
     sm.set_defaults(func=cmd_score_dict)
+
+    rp = sub.add_parser("reply", help="Draft an X reply from a ScoreResult gate (§7.3)")
+    rp.add_argument("input", nargs="?", default=None, help="JSON file from the scorer, or - for stdin")
+    rp.add_argument("-s", "--sample", choices=sorted(SAMPLES), help="built-in sample (no file needed)")
+    rp.add_argument("-p", "--post", help="original post text")
+    rp.add_argument("--post-file", help="file containing the original post")
+    rp.add_argument("--prompt", dest="dump_prompt", action="store_true", help="print the LLM prompt instead of a draft")
+    rp.add_argument("--json", action="store_true", help="emit gate, fruit, may_auto_post, and reply as JSON")
+    rp.add_argument("--max-chars", type=int, default=280)
+    rp.set_defaults(func=cmd_reply)
     return p
 
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
-    if args.cmd in {"report", "dashboard"}:
+    if args.cmd in {"report", "dashboard", "reply"}:
         if not getattr(args, "sample", None) and not getattr(args, "input", None):
             sys.stderr.write(
                 "error: pass a JSON file or -s {flow,refuse,correct,doom_loop}\n"

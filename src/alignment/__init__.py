@@ -11,6 +11,12 @@ from .engine import ScoreError, ScoreResult, parse_llm_output, print_report, sco
 from .prompt import system_prompt
 from .samples import SAMPLES
 from .slices import HUMAN, JESUS, SATAN, SLICE_NAMES
+from .x_reply import (
+    build_reply_prompt,
+    dominant_fruit,
+    may_auto_post,
+    suggest_reply,
+)
 
 __all__ = [
     "HUMAN",
@@ -20,14 +26,18 @@ __all__ = [
     "SLICE_NAMES",
     "ScoreError",
     "ScoreResult",
+    "build_reply_prompt",
     "create_dashboard",
+    "dominant_fruit",
     "integrate_lorenz",
     "integrate_motion",
+    "may_auto_post",
     "parse_llm_output",
     "print_report",
     "render_lorenz",
     "render_motion_regimes",
     "score",
+    "suggest_reply",
     "system_prompt",
 ]
 
