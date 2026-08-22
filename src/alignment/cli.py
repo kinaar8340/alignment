@@ -16,6 +16,7 @@ from .x_reply import build_reply_prompt, dominant_fruit, may_auto_post, suggest_
 from .guardrail import guard as run_guard
 from .household import DEFAULT_LOG, HouseholdLog, gate_note, log_entry
 from .corpus import analyze_corpus, corpus_prompt, format_report, load_corpus
+from .agent import AlignedAgent
 
 
 def _read(path: str) -> str:
@@ -301,6 +302,63 @@ def cmd_corpus(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_agent(args: argparse.Namespace) -> int:
+    if not args.goal:
+        sys.stderr.write("error: pass --goal\n")
+        return 2
+    plan_result = None
+    if args.score_sample:
+        plan_result = parse_llm_output(SAMPLES[args.score_sample], source=args.score_sample)
+    elif args.score:
+        plan_result = parse_llm_output(_read(args.score), source=args.score)
+    if args.plan is None and plan_result is None:
+        sys.stderr.write(
+            "error: offline agent needs --plan and --score-sample (or --score JSON)\n"
+            "  PYTHONPATH=src python3 -m alignment agent --goal 'repair a household' "
+            "--plan 'Practice correction together.' --score-sample flow\n"
+        )
+        return 2
+    if args.plan is None:
+        sys.stderr.write("error: pass --plan (or wire a model)\n")
+        return 2
+    if plan_result is None:
+        sys.stderr.write("error: pass --score-sample or --score\n")
+        return 2
+    corrected_result = None
+    if args.rewrite_sample:
+        corrected_result = parse_llm_output(SAMPLES[args.rewrite_sample], source=args.rewrite_sample)
+    agent = AlignedAgent()
+    out = agent.step(
+        args.goal,
+        args.context or "",
+        plan=args.plan,
+        plan_result=plan_result,
+        corrected=args.rewrite,
+        corrected_result=corrected_result,
+    )
+    if args.json:
+        payload = {
+            k: v
+            for k, v in out.items()
+            if k not in {"plan_result", "corrected_result"}
+        }
+        if out.get("plan_result") is not None:
+            payload["plan_result"] = out["plan_result"].to_dict()
+        if out.get("corrected_result") is not None:
+            payload["corrected_result"] = out["corrected_result"].to_dict()
+        json.dump(payload, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return 0
+    print(f"status: {out['status']}")
+    print(f"gate:   {out['gate']}")
+    if out.get("final_action"):
+        print(f"action: {out['final_action']}")
+    else:
+        print(f"fruit:  {out.get('fruit')}")
+        print(out["recovery"])
+    return 0
+
+
 _EPILOG = """
 examples:
   PYTHONPATH=src python3 -m alignment report -s flow
@@ -316,6 +374,7 @@ examples:
   PYTHONPATH=src python3 -m alignment household dashboard -o outputs/household_latest.png
   PYTHONPATH=src python3 -m alignment corpus --text "policy draft" --fixture examples/corpus_sample.json --top 5
   PYTHONPATH=src python3 -m alignment corpus --prompt
+  PYTHONPATH=src python3 -m alignment agent --goal "repair a household" --plan "Practice correction together." --score-sample flow
   PYTHONPATH=src python3 -m alignment demo -o outputs
 """.strip()
 
@@ -417,6 +476,17 @@ def build_parser() -> argparse.ArgumentParser:
     co.add_argument("-o", "--output", help="write JSON report to this path")
     co.add_argument("--prompt", dest="dump_prompt", action="store_true", help="print the corpus scorer prompt")
     co.set_defaults(func=cmd_corpus)
+
+    ag = sub.add_parser("agent", help="Planner / critic / executor loop on the §7.2 gate")
+    ag.add_argument("--goal", required=True)
+    ag.add_argument("--context", default="")
+    ag.add_argument("--plan", help="canned planner action (offline)")
+    ag.add_argument("--score-sample", choices=sorted(SAMPLES), help="built-in sample for critic score of the plan")
+    ag.add_argument("--score", help="JSON file for the critic ScoreResult")
+    ag.add_argument("--rewrite", help="canned σ(Z) rewrite when the plan is CORRECT")
+    ag.add_argument("--rewrite-sample", choices=sorted(SAMPLES), help="critic score of the rewrite")
+    ag.add_argument("--json", action="store_true")
+    ag.set_defaults(func=cmd_agent)
     return p
 
 

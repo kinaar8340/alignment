@@ -111,6 +111,11 @@ python3 -m alignment household dashboard -o outputs/household_latest.png
 python3 -m alignment corpus --text "policy draft" --fixture examples/corpus_sample.json --top 5
 python3 -m alignment corpus examples/policy.txt --fixture examples/corpus_sample.json -o report.json
 python3 -m alignment corpus --prompt
+
+# planner / critic / executor — same gate
+python3 -m alignment agent --goal "repair a household" \
+  --plan "Practice correction together." --score-sample flow
+python3 -m alignment agent --goal "farm outrage" --plan "bait" --score-sample refuse --json
 ```
 
 Samples: `flow`, `refuse`, `correct`, `doom_loop`.
@@ -166,6 +171,7 @@ create_dashboard(result, save_path="dashboard.png")
 | `src/alignment/guardrail.py` | O-first wrapper: score request + draft, then gate |
 | `src/alignment/household.py` | Local JSON log, running means, latest dashboard |
 | `src/alignment/corpus.py` | Long-text A1–A28 / M1–M28 hits + public-correctability |
+| `src/alignment/agent.py` | Planner / critic / executor on the same gate |
 | `prompts/scoring_engine.txt` | Short scorer prompt |
 | `examples/*.json` | Fixtures for the four gates |
 | `images/` | Unit-circle and universal-dynamics figures |
@@ -204,7 +210,7 @@ The engine is the shared cornerstone. Later layers call the same `ScoreResult` /
 3. **Personal / household dashboard** (`python3 -m alignment household`) — local JSON log, running mean(v)/min(v), latest paired-circle PNG. Optional `--who` when sharing a file.
 4. **Corpus analyzer** (`python3 -m alignment corpus`) — A1–A28 / M1–M28 with evidence and document cues; `public_correctable` audit (A5)
 5. **Interactive sandbox** — live circles, σ(Z) / φ(Z) integration, helix shielding
-6. **Agent orchestration** — planner asks “does adaptation ask first?”; critic runs the fruits test; executor only proceeds under O primacy or wisdom-gated correction
+6. **Agent orchestration** (`python3 -m alignment agent`) — planner asks “does adaptation ask first?”; critic runs the fruits test and gate; executor only proceeds under FLOW or a σ(Z) correction
 
 No hidden optimization target. The Observer can always re-enter.
 

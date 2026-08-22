@@ -7,6 +7,7 @@ from .dynamics import (
     render_lorenz,
     render_motion_regimes,
 )
+from .agent import AlignedAgent, PLANNER_SYSTEM, may_execute
 from .corpus import CorpusReport, PatternHit, analyze_corpus, corpus_prompt
 from .engine import ScoreError, ScoreResult, parse_llm_output, print_report, score
 from .guardrail import guard, guarded_chat, score_text
@@ -29,10 +30,12 @@ __all__ = [
     "SLICE_NAMES",
     "ScoreError",
     "ScoreResult",
+    "AlignedAgent",
     "CorpusReport",
     "Entry",
     "HouseholdLog",
     "PatternHit",
+    "PLANNER_SYSTEM",
     "analyze_corpus",
     "build_reply_prompt",
     "corpus_prompt",
@@ -45,6 +48,7 @@ __all__ = [
     "log_entry",
     "integrate_motion",
     "may_auto_post",
+    "may_execute",
     "parse_llm_output",
     "print_report",
     "render_lorenz",
