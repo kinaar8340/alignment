@@ -18,6 +18,7 @@ from .samples import SAMPLES
 from .slices import HUMAN, JESUS, SATAN, SLICE_NAMES
 from .timeline import TimedScore, demo_year, fetch_user_posts, trajectory_stats
 from .torus import render_torus_dashboard
+from .aura import interpolate_rows, render_aura_ring, render_aura_still, render_aura_video
 from .x_bot import consider as bot_consider, posting_decision
 from .x_reply import (
     build_reply_prompt,
@@ -60,6 +61,10 @@ __all__ = [
     "demo_year",
     "fetch_user_posts",
     "render_torus_dashboard",
+    "interpolate_rows",
+    "render_aura_ring",
+    "render_aura_still",
+    "render_aura_video",
     "trajectory_stats",
     "integrate_motion",
     "may_auto_post",

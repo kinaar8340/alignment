@@ -34,6 +34,7 @@ Repo: [https://github.com/kinaar8340/alignment](https://github.com/kinaar8340/al
 | Agent | `agent.py` | Planner → critic → executor | Consumes |
 | X bot | `x_bot.py` | Post only when the gate allows | Consumes |
 | Visualizer | `torus.py` | Year of circles stacked into a torus + 2D trends | Displays |
+| Aura | `aura.py` | Spectral hoop: hue = slice, opacity = net, glow = gate | Displays |
 
 ## Geometry
 
@@ -152,6 +153,11 @@ python3 -m alignment visualize demo -o outputs/torus_dashboard.png
 python3 -m alignment visualize fetch --user kinaar8340 --since 2025-08-22 -o data/posts.jsonl
 python3 -m alignment visualize score --posts data/posts.jsonl --live --limit 40 --spread -o data/scores.jsonl
 python3 -m alignment visualize render --scores data/scores.jsonl -o outputs/torus_kinaar.png
+
+# aura — same scores, radial field around a silhouette (needs ffmpeg for mp4)
+python3 -m alignment visualize aura --demo -o outputs/aura.mp4
+python3 -m alignment visualize aura --scores data/scores.jsonl -o outputs/aura_kinaar.mp4
+python3 -m alignment visualize aura --demo --still-only -o outputs/aura.mp4
 ```
 
 ## Score a real text
@@ -303,6 +309,25 @@ python3 -m alignment visualize fetch --user kinaar8340 --since 2025-08-22 -o dat
 
 Live Grok scoring a full year is slow (one call per post). Use `--limit` first, save `data/scores.jsonl`, then `visualize render`.
 
+### Aura field
+
+The torus already encodes the 10-slice state vector Ψ evolving under
+
+```
+dΨ/dt = O[Ψ] + σ(Z)·C[Ψ, E] + (1 − σ(Z))·A[Ψ]
+```
+
+`visualize aura` projects those same magnitudes as a spectral hoop around a silhouette. Hue is locked to slice angle (blue at 12 o'clock walking clockwise through purple, magenta, pink, yellow). Local opacity follows `net = v + w`. Master glow follows the gate: FLOW = full, CORRECT = medium, REFUSE / STOP_FEEDING = dim and red-shifted. Vertical beams scale with `v`. Time is the torus θ — opacities breathe; the color map does not move. ffmpeg (`libx264`) writes the mp4; `--still-only` writes the mean-field PNG without it.
+
+```bash
+python3 -m alignment visualize aura --demo --weeks 52 -o outputs/aura.mp4
+python3 -m alignment visualize aura --scores data/scores.jsonl -o outputs/aura_kinaar.mp4
+```
+
+Judgment stays on observable fruit. No hidden second scoring surface.
+
+![Alignment aura still](outputs/aura_kinaar.png)
+
 ### Agent
 
 Planner proposes one concrete action and must ask: *does this adaptation ask first?* Critic scores the plan. Executor runs only under FLOW or a σ(Z) correction. `exploit_class` never executes.
@@ -332,6 +357,9 @@ out = agent.step("repair a household")
 | `src/alignment/corpus.py` | Long-text A/M hits + public-correctability |
 | `src/alignment/agent.py` | Planner / critic / executor |
 | `src/alignment/x_bot.py` | X bot: post only on FLOW (CORRECT optional) |
+| `src/alignment/timeline.py` | X ingest, spread/stride sampling, timed scores |
+| `src/alignment/torus.py` | Stacked unit-circle torus + 2D trends |
+| `src/alignment/aura.py` | Spectral hoop (hue = slice, opacity = net, glow = gate) |
 | `prompts/scoring_engine.txt` | Short scorer prompt |
 | `examples/flow.json` … `doom_loop.json` | Four-gate fixtures |
 | `examples/corpus_sample.json` | Corpus fixture with A/M hits |

@@ -21,6 +21,7 @@ from .live import LiveError, detect_backend, pipeline_live, score_live, reply_li
 from .x_bot import BotError, BotLog, DEFAULT_LOG as BOT_LOG, consider as bot_consider
 from .timeline import demo_year, fetch_user_posts, read_posts, read_scores, score_posts, trajectory_stats, write_posts, write_scores
 from .torus import render_torus_dashboard
+from .aura import render_aura_still, render_aura_video
 
 
 def _read(path: str) -> str:
@@ -581,6 +582,41 @@ def cmd_visualize_render(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_visualize_aura(args: argparse.Namespace) -> int:
+    if bool(getattr(args, "demo", False)) == bool(getattr(args, "scores", None)):
+        sys.stderr.write("error: pass --demo or --scores PATH\n")
+        return 2
+    rows = demo_year(username=args.user or "demo", weeks=args.weeks) if args.demo else read_scores(args.scores)
+    if not rows:
+        sys.stderr.write("error: no scored posts for aura\n")
+        return 2
+    print(json.dumps(trajectory_stats(rows), indent=2))
+    still_path = args.still or str(Path(args.output).with_suffix(".png"))
+    still = render_aura_still(
+        rows,
+        save_path=still_path,
+        title=args.title or "Alignment aura",
+    )
+    print(still)
+    if args.still_only:
+        return 0
+
+    def _progress(i: int, n: int) -> None:
+        if i == 0 or i + 1 == n or (i + 1) % 10 == 0:
+            print(f"  frame {i + 1}/{n}", flush=True)
+
+    video = render_aura_video(
+        rows,
+        save_path=args.output,
+        fps=args.fps,
+        frames_per_step=args.frames_per_step,
+        title=args.title or "Alignment aura",
+        progress=_progress,
+    )
+    print(video)
+    return 0
+
+
 _EPILOG = """
 examples:
   PYTHONPATH=src python3 -m alignment report -s flow
@@ -602,6 +638,8 @@ examples:
   PYTHONPATH=src python3 -m alignment visualize demo -o outputs/torus_dashboard.png
   PYTHONPATH=src python3 -m alignment visualize fetch --user kinaar8340 --since 2025-08-22 -o data/posts.jsonl
   PYTHONPATH=src python3 -m alignment visualize render --scores data/scores.jsonl -o outputs/torus_dashboard.png
+  PYTHONPATH=src python3 -m alignment visualize aura --demo -o outputs/aura.mp4
+  PYTHONPATH=src python3 -m alignment visualize aura --scores data/scores.jsonl -o outputs/aura_kinaar.mp4
   PYTHONPATH=src python3 -m alignment demo -o outputs
 """.strip()
 
@@ -769,7 +807,7 @@ def build_parser() -> argparse.ArgumentParser:
     bl.add_argument("--json", action="store_true")
     bl.set_defaults(func=cmd_bot_log)
 
-    vz = sub.add_parser("visualize", help="Torus of stacked unit circles + 2D alignment trends")
+    vz = sub.add_parser("visualize", help="Torus of stacked unit circles, 2D trends, and aura field")
     vz_sub = vz.add_subparsers(dest="visualize_cmd", required=True)
     vd = vz_sub.add_parser("demo", help="Render a synthetic year (no live scoring)")
     vd.add_argument("-o", "--output", default="outputs/torus_dashboard.png")
@@ -804,6 +842,19 @@ def build_parser() -> argparse.ArgumentParser:
     vr.add_argument("-o", "--output", default="outputs/torus_dashboard.png")
     vr.add_argument("--title")
     vr.set_defaults(func=cmd_visualize_render)
+
+    va = vz_sub.add_parser("aura", help="Project scored circles onto a human-aura field")
+    va.add_argument("--demo", action="store_true", help="synthetic year (no live scoring)")
+    va.add_argument("--scores", help="scored JSONL from visualize score")
+    va.add_argument("-o", "--output", default="outputs/aura.mp4")
+    va.add_argument("--still", help="still PNG path (default: output with .png)")
+    va.add_argument("--still-only", action="store_true", help="write the mean-field PNG, skip ffmpeg")
+    va.add_argument("--fps", type=int, default=12)
+    va.add_argument("--frames-per-step", type=int, default=3, help="interpolated frames between consecutive posts")
+    va.add_argument("--weeks", type=int, default=52)
+    va.add_argument("--user", default="demo")
+    va.add_argument("--title")
+    va.set_defaults(func=cmd_visualize_aura)
     return p
 
 
@@ -832,6 +883,9 @@ def main(argv=None) -> int:
         sys.stderr.write(f"{exc}\n")
         return 2
     except BotError as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 2
+    except RuntimeError as exc:
         sys.stderr.write(f"{exc}\n")
         return 2
 
