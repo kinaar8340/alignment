@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.DS_Store
+/out.png
+/alignment_dashboard.png
+/lorenz_attractor.png
+/motion_regimes.png
+/outputs/scoring_engine_prompt.txt
