@@ -106,6 +106,11 @@ python3 -m alignment household add \
   --note "Felt the Observer return."
 python3 -m alignment household status
 python3 -m alignment household dashboard -o outputs/household_latest.png
+
+# corpus analyzer — A1–A28 / M1–M28 with document cues
+python3 -m alignment corpus --text "policy draft" --fixture examples/corpus_sample.json --top 5
+python3 -m alignment corpus examples/policy.txt --fixture examples/corpus_sample.json -o report.json
+python3 -m alignment corpus --prompt
 ```
 
 Samples: `flow`, `refuse`, `correct`, `doom_loop`.
@@ -160,6 +165,7 @@ create_dashboard(result, save_path="dashboard.png")
 | `src/alignment/x_reply.py` | §7.3 X reply / amplification from the gate |
 | `src/alignment/guardrail.py` | O-first wrapper: score request + draft, then gate |
 | `src/alignment/household.py` | Local JSON log, running means, latest dashboard |
+| `src/alignment/corpus.py` | Long-text A1–A28 / M1–M28 hits + public-correctability |
 | `prompts/scoring_engine.txt` | Short scorer prompt |
 | `examples/*.json` | Fixtures for the four gates |
 | `images/` | Unit-circle and universal-dynamics figures |
@@ -196,7 +202,7 @@ The engine is the shared cornerstone. Later layers call the same `ScoreResult` /
 1. **X reply and amplification** (`python3 -m alignment reply`) — FLOW: add light; CORRECT: one Observer question; REFUSE / STOP_FEEDING: name the fruit, do not echo the closed metric. Auto-post only on FLOW / CORRECT.
 2. **AI guardrail** (`python3 -m alignment guard`) — score the request and the draft; O-first; σ(Z) rewrite; refuse / stop with Observer re-entry
 3. **Personal / household dashboard** (`python3 -m alignment household`) — local JSON log, running mean(v)/min(v), latest paired-circle PNG. Optional `--who` when sharing a file.
-4. **Corpus analyzer** — A1–A28 / M1–M28 with citations; public-correctability audit
+4. **Corpus analyzer** (`python3 -m alignment corpus`) — A1–A28 / M1–M28 with evidence and document cues; `public_correctable` audit (A5)
 5. **Interactive sandbox** — live circles, σ(Z) / φ(Z) integration, helix shielding
 6. **Agent orchestration** — planner asks “does adaptation ask first?”; critic runs the fruits test; executor only proceeds under O primacy or wisdom-gated correction
 

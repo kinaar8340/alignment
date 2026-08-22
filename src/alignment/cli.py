@@ -15,6 +15,7 @@ from .samples import SAMPLES
 from .x_reply import build_reply_prompt, dominant_fruit, may_auto_post, suggest_reply
 from .guardrail import guard as run_guard
 from .household import DEFAULT_LOG, HouseholdLog, gate_note, log_entry
+from .corpus import analyze_corpus, corpus_prompt, format_report, load_corpus
 
 
 def _read(path: str) -> str:
@@ -262,6 +263,44 @@ def cmd_household_dashboard(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_corpus(args: argparse.Namespace) -> int:
+    if args.dump_prompt:
+        sys.stdout.write(corpus_prompt() + "\n")
+        return 0
+    text = args.text or ""
+    source = ""
+    if args.path:
+        text = load_corpus(args.path)
+        source = str(args.path)
+    if not text.strip():
+        sys.stderr.write(
+            "error: pass a file path or --text\n"
+            "  PYTHONPATH=src python3 -m alignment corpus --text 'long article...' --fixture examples/corpus_sample.json --top 5\n"
+        )
+        return 2
+    if not args.fixture:
+        sys.stderr.write(
+            "error: offline corpus needs --fixture JSON from the corpus scorer\n"
+            "  PYTHONPATH=src python3 -m alignment corpus --text '...' --fixture examples/corpus_sample.json\n"
+            "Dump the scorer prompt with: python3 -m alignment corpus --prompt\n"
+        )
+        return 2
+    raw = json.loads(_read(args.fixture))
+    report = analyze_corpus(text, raw=raw, source=source)
+    if args.output or args.json:
+        rendered = json.dumps(report.to_dict(), indent=2) + "\n"
+        if args.output:
+            out = Path(args.output)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(rendered, encoding="utf-8")
+            print(out)
+            return 0
+        sys.stdout.write(rendered)
+        return 0
+    print(format_report(report, top=args.top))
+    return 0
+
+
 _EPILOG = """
 examples:
   PYTHONPATH=src python3 -m alignment report -s flow
@@ -275,6 +314,8 @@ examples:
   PYTHONPATH=src python3 -m alignment household add --label "Evening conversation" --text "We practiced correction instead of winning." --score-sample flow
   PYTHONPATH=src python3 -m alignment household status
   PYTHONPATH=src python3 -m alignment household dashboard -o outputs/household_latest.png
+  PYTHONPATH=src python3 -m alignment corpus --text "policy draft" --fixture examples/corpus_sample.json --top 5
+  PYTHONPATH=src python3 -m alignment corpus --prompt
   PYTHONPATH=src python3 -m alignment demo -o outputs
 """.strip()
 
@@ -366,6 +407,16 @@ def build_parser() -> argparse.ArgumentParser:
     hh_dash.add_argument("--log", default=str(DEFAULT_LOG))
     hh_dash.add_argument("-o", "--output", default="outputs/household_latest.png")
     hh_dash.set_defaults(func=cmd_household_dashboard)
+
+    co = sub.add_parser("corpus", help="Score a long text against A1–A28 / M1–M28")
+    co.add_argument("path", nargs="?", help="text or PDF file")
+    co.add_argument("--text", help="inline corpus text")
+    co.add_argument("--fixture", help="offline scorer JSON (core vectors + a_hits/m_hits)")
+    co.add_argument("--top", type=int, default=5)
+    co.add_argument("--json", action="store_true")
+    co.add_argument("-o", "--output", help="write JSON report to this path")
+    co.add_argument("--prompt", dest="dump_prompt", action="store_true", help="print the corpus scorer prompt")
+    co.set_defaults(func=cmd_corpus)
     return p
 
 

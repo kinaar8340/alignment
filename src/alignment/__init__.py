@@ -7,6 +7,7 @@ from .dynamics import (
     render_lorenz,
     render_motion_regimes,
 )
+from .corpus import CorpusReport, PatternHit, analyze_corpus, corpus_prompt
 from .engine import ScoreError, ScoreResult, parse_llm_output, print_report, score
 from .guardrail import guard, guarded_chat, score_text
 from .household import Entry, HouseholdLog, gate_note, log_entry
@@ -28,9 +29,13 @@ __all__ = [
     "SLICE_NAMES",
     "ScoreError",
     "ScoreResult",
+    "CorpusReport",
     "Entry",
     "HouseholdLog",
+    "PatternHit",
+    "analyze_corpus",
     "build_reply_prompt",
+    "corpus_prompt",
     "gate_note",
     "create_dashboard",
     "dominant_fruit",

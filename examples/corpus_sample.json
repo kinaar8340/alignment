@@ -1,0 +1,42 @@
+{
+  "v": [6.0, 5.5, 4.0, 6.5, 7.0, 8.0, 5.0, 4.5, 6.0, 5.0],
+  "w": [-2.0, -1.0, -3.0, -1.5, -2.5, -1.0, -2.0, -4.0, -1.0, -1.5],
+  "observer_present": true,
+  "asks_first": false,
+  "taking_without_asking": false,
+  "exploit_class": false,
+  "doom_loop": false,
+  "fruits": "Households and public correction are present; wrath and pride leak in the enforcement section.",
+  "rationale": "A5 and A6 are strong. M7 and M15 show up where law is used to protect the system.",
+  "public_correctable": true,
+  "summary": "The draft strengthens households and leaves claims correctable in public, but the enforcement clauses treat law as a shield for power. Gate: CORRECT. σ(Z) on the enforcement section.",
+  "a_hits": [
+    {
+      "id": "A6",
+      "strength": 8.0,
+      "evidence": "The household remains the primary unit of care and correction."
+    },
+    {
+      "id": "A5",
+      "strength": 7.5,
+      "evidence": "All findings shall be published and open to public correction within 30 days."
+    },
+    {
+      "id": "A7",
+      "strength": 4.0,
+      "evidence": "Equal protection is stated, then narrowed by emergency exceptions."
+    }
+  ],
+  "m_hits": [
+    {
+      "id": "M7",
+      "strength": 6.5,
+      "evidence": "Speech that contradicts the designated narrative may be treated as interference."
+    },
+    {
+      "id": "M15",
+      "strength": 5.5,
+      "evidence": "The administrator's determinations are final and not subject to appeal."
+    }
+  ]
+}
