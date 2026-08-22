@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "alignment-scoring"
 version = "0.1.0"
-description = "Unit-circle alignment scoring engine, gate, dashboard, and Lorenz dynamics."
+description = "Unit-circle alignment library: inspectable §7.2 gate, dashboard, reply, guardrail, household log, corpus analyzer, and agent loop."
 requires-python = ">=3.9"
 dependencies = [
     "matplotlib>=3.8",

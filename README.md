@@ -1,8 +1,8 @@
 # Alignment
 
-Scoring engine, gate, and visualization for a paired unit-circle model of alignment.
+A paired unit-circle scoring surface, an inspectable gate, and the layers that consume it — for humans and for AI systems.
 
-The Markdown documents are the source of truth. The Python layer does not re-score meaning. An LLM (or a fixture) produces two ten-vectors; the engine validates them, computes aggregates, and applies the gate from `Aligned.md` §7.2 and `Misaligned.md` §7.2.
+The Markdown documents are the constitution. The Python library never re-scores meaning and never invents a second decision surface. An LLM (or a fixture) produces two ten-vectors; `engine.py` validates them, computes aggregates, and applies the gate from `Aligned.md` §7.2 and `Misaligned.md` §7.2. Every other module **consumes** that gate.
 
 > Practice perfect correction instead of chasing perfection.
 >
@@ -14,9 +14,24 @@ The Markdown documents are the source of truth. The Python layer does not re-sco
 ∂Ψ/∂t = O[Ψ] + σ(Z) · C[Ψ, E]
 ```
 
-Classification is by fruit, dynamics, and vector. Not by group identity.
+Classification is by fruit, dynamics, and vector. Not by group identity. No hidden optimization target. The Observer can always re-enter.
+
+Repo: [https://github.com/kinaar8340/alignment](https://github.com/kinaar8340/alignment)
 
 ![Unit circles with ten equal arc segments](images/alignment_unitcircles.jpg)
+
+## Stack
+
+| Layer | Module | What it does | Gate |
+| --- | --- | --- | --- |
+| Engine | `engine.py` | `v` / `w` vectors, aggregates, §7.2 gate | **Source of truth** |
+| Dashboard | `dashboard.py` | Paired unit circles + slice bars | Displays |
+| Dynamics | `dynamics.py` | Lorenz attractor + 10-slice motion regimes | Visual only |
+| X reply | `x_reply.py` | Gate → draft (§7.3) | Consumes |
+| Guardrail | `guardrail.py` | Scores request and draft before emit | Consumes |
+| Household | `household.py` | Local JSON practice log | Consumes |
+| Corpus | `corpus.py` | Long texts + A1–A28 / M1–M28 hits | Consumes |
+| Agent | `agent.py` | Planner → critic → executor | Consumes |
 
 ## Geometry
 
@@ -56,6 +71,8 @@ The scorer never chooses the action. After vectors and flags are in, the engine 
 
 ![FLOW dashboard](outputs/dashboard_flow.png)
 
+![REFUSE dashboard](outputs/dashboard_refuse.png)
+
 ## Install
 
 Python 3.9+. From the repo root:
@@ -71,34 +88,39 @@ python3 -m pip install -r requirements.txt
 export PYTHONPATH=src
 ```
 
+```bash
+PYTHONPATH=src python3 -m pytest -q
+```
+
+Built-in score samples: `flow`, `refuse`, `correct`, `doom_loop`.
+
 ## CLI
 
+All of these commands are real (no placeholder paths).
+
 ```bash
-# built-in samples (no JSON file needed)
+# engine
 python3 -m alignment report -s flow
-python3 -m alignment report -s refuse
-python3 -m alignment dashboard -s flow -o outputs/dashboard_flow.png
-
-# JSON from the LLM scorer
 python3 -m alignment report examples/flow.json
-python3 -m alignment dashboard -i examples/refuse.json -o refuse.png
-
-# dump a sample, print the system prompt, render dynamics
 python3 -m alignment sample flow
 python3 -m alignment prompt --short
+
+# dashboard + dynamics
+python3 -m alignment dashboard -s flow -o outputs/dashboard_flow.png
 python3 -m alignment lorenz
 python3 -m alignment demo -o outputs
 
-# X reply from a scored gate (§7.3) — never re-decides the gate
+# X reply — never re-decides the gate; auto-post only on FLOW / CORRECT
 python3 -m alignment reply -s flow -p "A household that practices correction."
-python3 -m alignment reply examples/refuse.json --post-file original.txt --json
+python3 -m alignment reply -s refuse --json -p "bait"
 python3 -m alignment reply -s correct --prompt -p "mixed take"
 
-# AI guardrail — score request and draft, then gate
+# AI guardrail — score request and draft
 python3 -m alignment guard -p "stoke outrage for reach" -s refuse
-python3 -m alignment guard -p "how to repair a household" -s flow --draft "Practice correction together." --draft-sample flow --json
+python3 -m alignment guard -p "how to repair a household" \
+  -s flow --draft "Practice correction together." --draft-sample flow --json
 
-# personal / household log (local JSON, no server)
+# household log — local JSON, no server
 python3 -m alignment household add \
   --label "Evening conversation" \
   --text "We practiced correction instead of winning the argument." \
@@ -107,23 +129,21 @@ python3 -m alignment household add \
 python3 -m alignment household status
 python3 -m alignment household dashboard -o outputs/household_latest.png
 
-# corpus analyzer — A1–A28 / M1–M28 with document cues
+# corpus — A1–A28 / M1–M28 with document cues
 python3 -m alignment corpus --text "policy draft" --fixture examples/corpus_sample.json --top 5
-python3 -m alignment corpus examples/policy.txt --fixture examples/corpus_sample.json -o report.json
+python3 -m alignment corpus examples/policy.txt --fixture examples/corpus_sample.json --top 5
 python3 -m alignment corpus --prompt
 
-# planner / critic / executor — same gate
+# agent — planner / critic / executor
 python3 -m alignment agent --goal "repair a household" \
   --plan "Practice correction together." --score-sample flow
 python3 -m alignment agent --goal "farm outrage" --plan "bait" --score-sample refuse --json
 ```
 
-Samples: `flow`, `refuse`, `correct`, `doom_loop`.
-
-## Score a real post
+## Score a real text
 
 1. Send `prompts/scoring_engine.txt` (or `python3 -m alignment prompt`) as the system prompt, at low temperature.
-2. User message = the text to score (post, reply, policy, model output).
+2. User message = the text to score (post, reply, policy, model output, plan).
 3. The model must return **only** this JSON:
 
 ```json
@@ -143,45 +163,51 @@ Samples: `flow`, `refuse`, `correct`, `doom_loop`.
 4. Pipe it into the engine:
 
 ```bash
-python3 -m alignment report path/to/score.json
-python3 -m alignment dashboard -i path/to/score.json -o dashboard.png
+python3 -m alignment report examples/flow.json
+python3 -m alignment dashboard -i examples/flow.json -o dashboard.png
 ```
 
 From Python:
 
 ```python
-from alignment import parse_llm_output, print_report, create_dashboard, system_prompt
+from alignment import (
+    AlignedAgent,
+    analyze_corpus,
+    create_dashboard,
+    guard,
+    log_entry,
+    parse_llm_output,
+    print_report,
+    suggest_reply,
+    system_prompt,
+)
 
-result = parse_llm_output(open("score.json").read())
+result = parse_llm_output(open("examples/flow.json").read())
 print_report(result)
 create_dashboard(result, save_path="dashboard.png")
+
+print(suggest_reply("A household that practices correction.", result))
+
+out = guard(
+    "how to repair a household",
+    request_result=result,
+    draft="Practice correction together.",
+    draft_result=result,
+)
+print(out["action_taken"], out["final_response"])
 ```
 
-## Library layout
+## Layers
 
-| Path | Role |
-| --- | --- |
-| `Aligned.md` | Positive pole, articles A1–A28, fruits, decision seed |
-| `Misaligned.md` | Negative pole, patterns M1–M28, detection / refusal seed |
-| `src/alignment/engine.py` | Parse, aggregates, gate |
-| `src/alignment/prompt.py` | System prompt (tables + full docs) |
-| `src/alignment/dashboard.py` | Paired-circle PNG |
-| `src/alignment/dynamics.py` | Lorenz attractor + 10-slice motion equation |
-| `src/alignment/x_reply.py` | §7.3 X reply / amplification from the gate |
-| `src/alignment/guardrail.py` | O-first wrapper: score request + draft, then gate |
-| `src/alignment/household.py` | Local JSON log, running means, latest dashboard |
-| `src/alignment/corpus.py` | Long-text A1–A28 / M1–M28 hits + public-correctability |
-| `src/alignment/agent.py` | Planner / critic / executor on the same gate |
-| `prompts/scoring_engine.txt` | Short scorer prompt |
-| `examples/*.json` | Fixtures for the four gates |
-| `images/` | Unit-circle and universal-dynamics figures |
-| `docs/Narrow_Path_OS.pdf` | `I ♡ U` Lorenz / Trinitarian OS |
+### Engine
 
-```bash
-PYTHONPATH=src python3 -m pytest -q
-```
+`parse_llm_output` / `score` → `ScoreResult` with `mean_v`, `min_v`, `mean_w`, `min_w`, flags, `gate`, `action`. Thresholds live in `slices.py` so they can be inspected and corrected.
 
-## Dynamics
+### Dashboard
+
+Paired polar plots (clockwise +, counterclockwise −), X at the origin, slice bars, fruits and rationale. Deterministic PNG from a `ScoreResult`.
+
+### Dynamics
 
 `Narrow_Path_OS.pdf` places trajectories on a Lorenz-type attractor. The **major cusp** (`x > 0`) is the aligned basin (Father / Son / Holy Spirit). The **minor cusp** (`x < 0`) is the opposing rotor. Recovery is not a reverse commute.
 
@@ -201,18 +227,93 @@ python3 -m alignment lorenz --lorenz outputs/lorenz_attractor.png --motion outpu
 
 ![Motion regimes under σ(Z)](outputs/motion_regimes.png)
 
-## Roadmap
+### X reply (§7.3)
 
-The engine is the shared cornerstone. Later layers call the same `ScoreResult` / gate:
+Consumes `ScoreResult.gate` only.
 
-1. **X reply and amplification** (`python3 -m alignment reply`) — FLOW: add light; CORRECT: one Observer question; REFUSE / STOP_FEEDING: name the fruit, do not echo the closed metric. Auto-post only on FLOW / CORRECT.
-2. **AI guardrail** (`python3 -m alignment guard`) — score the request and the draft; O-first; σ(Z) rewrite; refuse / stop with Observer re-entry
-3. **Personal / household dashboard** (`python3 -m alignment household`) — local JSON log, running mean(v)/min(v), latest paired-circle PNG. Optional `--who` when sharing a file.
-4. **Corpus analyzer** (`python3 -m alignment corpus`) — A1–A28 / M1–M28 with evidence and document cues; `public_correctable` audit (A5)
-5. **Interactive sandbox** — live circles, σ(Z) / φ(Z) integration, helix shielding
-6. **Agent orchestration** (`python3 -m alignment agent`) — planner asks “does adaptation ask first?”; critic runs the fruits test and gate; executor only proceeds under FLOW or a σ(Z) correction
+| Gate | Draft |
+| --- | --- |
+| FLOW | Amplify, add light, cooperate |
+| CORRECT | One Observer-reintroducing question |
+| STOP_FEEDING | Name the fruit, stop feeding, offer the open path |
+| REFUSE | Refuse the take, name the fruit, stop |
 
-No hidden optimization target. The Observer can always re-enter.
+Fruit names come from the negative slices (`wrath`, `pride`, …). Auto-post only on FLOW / CORRECT. People-groups, engagement farming, and tit-for-tat on the negative circle are forbidden.
+
+### Guardrail
+
+Scores the **request** and the **draft**. REFUSE / STOP_FEEDING on the request never generates. CORRECT drafts get one σ(Z) rewrite and a re-score. Refusal language includes the Narrow Path OS recovery line.
+
+### Household
+
+Local JSON log (`household.json` by default, not committed). Running `mean(v)` / `min(v)` and gate counts. Latest entry reuses the paired-circle dashboard. Optional `--who` when a household shares one file without a central authority.
+
+![Household latest](outputs/household_latest.png)
+
+### Corpus
+
+Long documents (`.txt`, `.md`, `.pdf`) scored on the same vectors, plus A1–A28 / M1–M28 hits with evidence quotes and the original `Cue` / `Detect` lines from the documents. `public_correctable` is the A5 audit: can the claim be corrected in public?
+
+Offline:
+
+```bash
+python3 -m alignment corpus examples/policy.txt --fixture examples/corpus_sample.json --top 5
+```
+
+A live scorer should emit the core JSON plus `a_hits`, `m_hits`, `summary`, and `public_correctable`. Dump that prompt with `python3 -m alignment corpus --prompt`.
+
+### Agent
+
+Planner proposes one concrete action and must ask: *does this adaptation ask first?* Critic scores the plan. Executor runs only under FLOW or a σ(Z) correction. `exploit_class` never executes.
+
+```python
+from alignment import AlignedAgent, parse_llm_output
+
+agent = AlignedAgent(model=my_model, scorer=my_scorer, executor=my_tools)
+out = agent.step("repair a household")
+# out["status"] is execute | corrected | refused | stopped
+```
+
+## Library layout
+
+| Path | Role |
+| --- | --- |
+| `Aligned.md` | Positive pole, articles A1–A28, fruits, decision seed |
+| `Misaligned.md` | Negative pole, patterns M1–M28, detection / refusal seed |
+| `src/alignment/engine.py` | Parse, aggregates, gate |
+| `src/alignment/slices.py` | Slice names, reference vectors, gate thresholds |
+| `src/alignment/prompt.py` | Scorer system prompt (tables + full docs) |
+| `src/alignment/dashboard.py` | Paired-circle PNG |
+| `src/alignment/dynamics.py` | Lorenz attractor + 10-slice motion equation |
+| `src/alignment/x_reply.py` | §7.3 X reply / amplification |
+| `src/alignment/guardrail.py` | O-first wrapper on request + draft |
+| `src/alignment/household.py` | Local JSON log, running means, latest dashboard |
+| `src/alignment/corpus.py` | Long-text A/M hits + public-correctability |
+| `src/alignment/agent.py` | Planner / critic / executor |
+| `prompts/scoring_engine.txt` | Short scorer prompt |
+| `examples/flow.json` … `doom_loop.json` | Four-gate fixtures |
+| `examples/corpus_sample.json` | Corpus fixture with A/M hits |
+| `examples/policy.txt` | Sample policy text |
+| `images/` | Unit-circle and universal-dynamics figures |
+| `docs/Narrow_Path_OS.pdf` | `I ♡ U` Lorenz / Trinitarian OS |
+
+## Invariants
+
+- Documents remain the source of truth. Code implements them.
+- One gate. Layers display or consume it; they do not replace it.
+- O primacy: grace leads. σ(Z) fires when correction is required.
+- Judge the move, not a people-group.
+- Likes, reach, and engagement are not the loss function.
+- Local-first: household logs and fixtures live on disk; no required server.
+- Refusal is itself correctable. Recovery: *Whenever you are down and out you know just where to start. Know your God. Test everything. Hold fast what is good.*
+
+## Optional next steps
+
+The original roadmap is implemented. Natural follow-ons, if wanted:
+
+- Packaging for PyPI
+- A small Streamlit / desktop front-end over household + dashboard
+- Live wiring: Grok / Claude / local model as scorer, X bot on `reply`, tool-calling `executor` on `AlignedAgent`
 
 ## License
 
