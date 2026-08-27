@@ -41,7 +41,10 @@ def test_trajectory_running_means(tmp_path: Path):
 
 def test_empty_log(tmp_path: Path):
     log = HouseholdLog.load(tmp_path / "missing.json")
-    assert log.trajectory() == {"n": 0}
+    traj = log.trajectory()
+    assert traj["n"] == 0
+    assert traj["intervals"] == []
+    assert traj["obtained"] is False
 
 
 def test_gate_note_recovery_and_amplify():
@@ -98,6 +101,30 @@ def test_cli_status_json_empty(tmp_path: Path, capsys):
 def test_cli_dashboard_empty(tmp_path: Path, capsys):
     assert main(["household", "dashboard", "--log", str(tmp_path / "none.json"), "-o", str(tmp_path / "x.png")]) == 2
     assert "No entries yet" in capsys.readouterr().err
+
+
+def test_flow_then_refuse_is_mirror_ended(tmp_path: Path):
+    path = tmp_path / "house.json"
+    log_entry(label="kitchen", text="practiced", result=_sr("flow"), path=path)
+    log_entry(label="porch", text="take", result=_sr("refuse"), path=path)
+    iv = HouseholdLog.load(path).intervals()
+    assert iv[0]["event"] == "mirror_ended"
+    assert iv[0]["obtained"] is False
+    assert iv[1]["event"] == "ineligible"
+    assert all(row["obtained"] is False for row in iv)
+
+
+def test_costume_change_with_fruit_is_a_shard(tmp_path: Path):
+    path = tmp_path / "house.json"
+    log_entry(label="church", text="a", result=_sr("flow"), path=path)
+    log_entry(label="work", text="b", result=_sr("flow"), path=path)
+    iv = HouseholdLog.load(path).intervals()
+    assert len(iv) == 1
+    assert iv[0]["event"] == "mirror"
+    assert iv[0]["costume_changed"] is True
+    assert iv[0]["obtained"] is False
+    assert "tattoos" not in iv[0]
+    assert "v" not in iv[0]
 
 
 def test_old_log_without_who(tmp_path: Path):

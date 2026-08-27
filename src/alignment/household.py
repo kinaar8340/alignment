@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Union
 
 from .dashboard import create_dashboard
 from .engine import ScoreResult, parse_llm_output
+from .reveal_contract import OBTAINED, mark_intervals
 from .slices import LAW_OF_MOTION, RECOVERY
 from .x_reply import dominant_fruit
 
@@ -102,15 +103,35 @@ class HouseholdLog:
             raise ValueError(f"household log must be a JSON list: {path}")
         return cls(path=path, entries=[Entry.from_mapping(e) for e in raw])
 
+    def records_for_contract(self) -> List[Dict[str, Any]]:
+        """Fruit and gate only. No slice tattoos."""
+        rows: List[Dict[str, Any]] = []
+        for entry in self.entries:
+            score = entry.score()
+            rows.append(
+                {
+                    "timestamp": entry.timestamp,
+                    "label": entry.label,
+                    "gate": score.gate,
+                    "fruit": dominant_fruit(score),
+                }
+            )
+        return rows
+
+    def intervals(self) -> List[Dict[str, Any]]:
+        """D-named shards: mirror / mirror_ended / ineligible. obtained is always false."""
+        return mark_intervals(self.records_for_contract())
+
     def trajectory(self) -> Dict[str, Any]:
         if not self.entries:
-            return {"n": 0}
+            return {"n": 0, "intervals": [], "obtained": OBTAINED}
         means_v = [float(e.result["mean_v"]) for e in self.entries]
         mins_v = [float(e.result["min_v"]) for e in self.entries]
         gates = [str(e.result["gate"]) for e in self.entries]
         counts: Dict[str, int] = {}
         for g in gates:
             counts[g] = counts.get(g, 0) + 1
+        intervals = self.intervals()
         return {
             "n": len(self.entries),
             "latest_mean_v": means_v[-1],
@@ -120,6 +141,8 @@ class HouseholdLog:
             "gate_counts": counts,
             "latest_gate": gates[-1],
             "latest_label": self.entries[-1].label,
+            "intervals": intervals,
+            "obtained": OBTAINED,
         }
 
     def render_latest(self, out: Union[str, Path]) -> Path:

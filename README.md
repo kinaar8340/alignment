@@ -4,6 +4,8 @@ A paired unit-circle scoring surface, an inspectable gate, and the layers that c
 
 The Markdown documents are the constitution. The Python library never re-scores meaning and never invents a second decision surface. An LLM (or a fixture) produces two ten-vectors; `engine.py` validates them, computes aggregates, and applies the gate from `Aligned.md` §7.2 and `Misaligned.md` §7.2. Every other module **consumes** that gate.
 
+This circle is a practice surface; it is not the leftover search. `[10…10]` is a constitutional pole, not a measured road. See [docs/REVEAL_CONTRACT.md](docs/REVEAL_CONTRACT.md).
+
 > Practice perfect correction instead of chasing perfection.
 >
 > Without correction, adaptation takes control — and adaptation takes without asking first.
@@ -266,7 +268,7 @@ Scores the **request** and the **draft**. REFUSE / STOP_FEEDING on the request n
 
 ### Household
 
-Local JSON log (`household.json` by default, not committed). Running `mean(v)` / `min(v)` and gate counts. Latest entry reuses the paired-circle dashboard. Optional `--who` when a household shares one file without a central authority.
+Local JSON log (`household.json` by default, not committed). Running `mean(v)` / `min(v)` and gate counts. Latest entry reuses the paired-circle dashboard. Optional `--who` when a household shares one file without a central authority. Intervals are named in reveal D’s words (`mirror`, `mirror_ended`, `ineligible`). FLOW is a temporary mirror, not ownership. `obtained` stays false. A shard is fruit and gate that survived a costume change (different label). Do not log tattoos.
 
 ![Household latest](outputs/household_latest.png)
 

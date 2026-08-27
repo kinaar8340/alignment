@@ -257,6 +257,15 @@ def cmd_household_status(args: argparse.Namespace) -> int:
     print(f"avg    mean(v)={traj['avg_mean_v']:.2f}  min(v)={traj['avg_min_v']:.2f}")
     counts = "  ".join(f"{g}={c}" for g, c in sorted(traj["gate_counts"].items()))
     print(f"gates: {counts}")
+    intervals = traj.get("intervals") or []
+    if intervals:
+        latest_iv = intervals[-1]
+        print(
+            f"shards: n={len(intervals)}  latest_event={latest_iv['event']}  "
+            f"costume_changed={latest_iv['costume_changed']}  obtained={traj.get('obtained', False)}"
+        )
+    else:
+        print(f"shards: n=0  obtained={traj.get('obtained', False)}")
     latest = log.entries[-1]
     print(gate_note(latest.score()))
     return 0
