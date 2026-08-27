@@ -55,6 +55,7 @@ def test_contract_doc_exists_with_five_lines():
         "Residual stays on the human/AI side.",
         "Symbols and slice labels are paint; fruit must survive swapping them.",
         "FLOW is a mirror window. `obtained` remains false.",
+        "Lorenz plots are visualizers of sensitivity and two basins.",
     ):
         assert line in text
     assert "Jesus" in text  # named as not a leftover candidate

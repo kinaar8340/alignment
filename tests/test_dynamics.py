@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
+from alignment import dynamics as dynamics_mod
 from alignment.dynamics import (
     integrate_lorenz,
     integrate_motion,
@@ -45,6 +46,16 @@ def test_sigma_zero_adaptation_takes():
 def test_motion_rhs_shape():
     dpsi = motion_rhs(np.zeros(10), sigma_z=1.0)
     assert dpsi.shape == (10,)
+
+
+def test_two_machines_stay_separate_in_the_caption():
+    doc = dynamics_mod.__doc__ or ""
+    assert "not a reversal of reveal" in doc
+    assert "Slice motion is a separate ODE" in doc
+    src = Path(dynamics_mod.__file__).read_text()
+    assert "Father" not in src
+    assert "Holy Spirit" not in src
+    assert "F–S–HS" not in src
 
 
 def test_render_figures(tmp_path: Path):

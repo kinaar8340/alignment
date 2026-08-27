@@ -20,3 +20,5 @@ This circle is a practice surface; it is not the leftover search. Keep two repos
 | FLOW | temporary mirror of the constitution, not ownership |
 
 A household shard is fruit and gate that stayed FLOW or CORRECT after the costume changed (different venue, no matching symbols). That is B applied to a life. Do not log tattoos.
+
+Lorenz plots are visualizers of sensitivity and two basins. They are not a measured road, not a proof of the poles, and not a reversal of reveal A/B/C. Slice motion is a separate ODE toward constitutional vectors.

@@ -28,7 +28,7 @@ Repo: [https://github.com/kinaar8340/alignment](https://github.com/kinaar8340/al
 | --- | --- | --- | --- |
 | Engine | `engine.py` | `v` / `w` vectors, aggregates, §7.2 gate | **Source of truth** |
 | Dashboard | `dashboard.py` | Paired unit circles + slice bars | Displays |
-| Dynamics | `dynamics.py` | Lorenz attractor + 10-slice motion regimes | Visual only |
+| Dynamics | `dynamics.py` | Lorenz (1963) butterfly + separate 10-slice gated gradient | Visual only — not a road, not a reversal of reveal A/B/C |
 | X reply | `x_reply.py` | Gate → draft (§7.3) | Consumes |
 | Guardrail | `guardrail.py` | Scores request and draft before emit | Consumes |
 | Household | `household.py` | Local JSON practice log | Consumes |

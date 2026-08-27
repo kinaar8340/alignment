@@ -12,3 +12,5 @@ This repo scores moves against a written constitution. It does not measure God.
 - never claim FLOW means a road was found
 - do not log tattoos; log fruit and gate
 - do not merge this repo with reveal
+- Lorenz is a visualizer of two basins; it does not reverse reveal A/B/C
+- Lorenz σ is not alignment σ(Z); sharing a letter is paint
