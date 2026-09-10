@@ -1,5 +1,7 @@
 # Alignment
 
+Parked lab — a small inspectable **gate**, not a worldview and not a pinned face.
+
 A paired unit-circle scoring surface, an inspectable gate, and the layers that consume it — for humans and for AI systems.
 
 The Markdown documents are the constitution. The Python library never re-scores meaning and never invents a second decision surface. An LLM (or a fixture) produces two ten-vectors; `engine.py` validates them, computes aggregates, and applies the gate from `Aligned.md` §7.2 and `Misaligned.md` §7.2. Every other module **consumes** that gate.
